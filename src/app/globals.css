@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 8%;
+    --foreground: 220 10% 95%;
+    --card: 220 15% 12%;
+    --card-foreground: 220 10% 95%;
+    --primary: 38 92% 60%;
+    --primary-foreground: 220 20% 8%;
+    --muted: 220 15% 16%;
+    --muted-foreground: 220 10% 55%;
+    --border: 220 15% 20%;
+    --accent: 270 60% 65%;
+    --accent-foreground: 220 10% 95%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+}
+
+@layer utilities {
+  .poster-shadow {
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
+  }
+  .glow-primary {
+    box-shadow: 0 0 30px hsl(38 92% 60% / 0.3);
+  }
+  .glow-accent {
+    box-shadow: 0 0 30px hsl(270 60% 65% / 0.3);
+  }
+}
