@@ -222,8 +222,45 @@ const ROLLING_STONE_IDS = [
   670,    // Oldboy
 ];
 
-// Oscar Best Picture winners (title, release year)
-const OSCAR_WINNERS = [
+// Fetch Oscar Best Picture winners from Wikidata (includes TMDB IDs)
+// Q102427 = Academy Award for Best Picture, P4947 = TMDB movie ID
+async function fetchOscarWinnersFromWikidata(): Promise<{ tmdbId: number; year: number }[]> {
+  const sparql = `
+SELECT ?film (SAMPLE(?tmdbId) AS ?tmdbId) (MIN(?pubDate) AS ?pubDate) WHERE {
+  ?film wdt:P166 wd:Q102427.
+  ?film wdt:P4947 ?tmdbId.
+  ?film wdt:P577 ?pubDate.
+}
+GROUP BY ?film
+ORDER BY DESC(?pubDate)
+`.trim();
+
+  const url = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`;
+  const res = await fetch(url, {
+    headers: {
+      Accept: "application/sparql-results+json",
+      "User-Agent": "Kinelo/1.0 (https://kinelo.vercel.app)",
+    },
+    next: { revalidate: 86400 },
+  });
+  if (!res.ok) throw new Error(`Wikidata ${res.status}`);
+  const data = await res.json();
+
+  const seen = new Set<number>();
+  return (data.results?.bindings ?? [])
+    .map((r: Record<string, { value: string }>) => ({
+      tmdbId: parseInt(r.tmdbId?.value ?? ""),
+      year: r.pubDate?.value ? new Date(r.pubDate.value).getFullYear() : 0,
+    }))
+    .filter(({ tmdbId }: { tmdbId: number }) => {
+      if (!tmdbId || isNaN(tmdbId) || seen.has(tmdbId)) return false;
+      seen.add(tmdbId);
+      return true;
+    });
+}
+
+// Kept as fallback — not used in GET but available if Wikidata is down
+const _OSCAR_BACKUP = [
   { title: "One Battle After Another", year: 2025 },
   { title: "Anora", year: 2024 },
   { title: "Oppenheimer", year: 2023 },
@@ -324,39 +361,38 @@ const OSCAR_WINNERS = [
 ];
 
 export async function GET() {
-  // For RT: fetch 5 pages of TMDB top_rated = 100 movies
-  const rtPages = await Promise.all(
-    [1, 2, 3, 4, 5].map((page) =>
-      tmdb("/movie/top_rated", { language: "en-US", page: String(page) })
-    )
-  );
-  const rtMovies = rtPages.flatMap((p) => p.results ?? []).slice(0, 100);
-
   // For IMDb + RS: fetch each by ID in parallel
   const uniqueImdb = [...new Set(IMDB_IDS)];
   const uniqueRs = [...new Set(ROLLING_STONE_IDS)];
 
-  const [imdbMovies, rsMovies] = await Promise.all([
+  // Oscar winners: pull from Wikidata (always current), fall back to title search
+  const oscarPromise = fetchOscarWinnersFromWikidata()
+    .then((winners) =>
+      Promise.all(
+        winners.map(({ tmdbId }) => tmdb(`/movie/${tmdbId}`).catch(() => null))
+      )
+    )
+    .catch(async () => {
+      // Wikidata unavailable — fall back to title+year search
+      return Promise.all(
+        _OSCAR_BACKUP.map(async ({ title, year }) => {
+          try {
+            const data = await tmdb("/search/movie", { query: title, year: String(year), include_adult: "false" });
+            const hit = data.results?.[0];
+            return hit ? { id: hit.id, title: hit.title, poster_path: hit.poster_path, release_date: hit.release_date } : null;
+          } catch { return null; }
+        })
+      );
+    });
+
+  const [imdbMovies, rsMovies, oscarMovies] = await Promise.all([
     Promise.all(uniqueImdb.map((id) => tmdb(`/movie/${id}`).catch(() => null))),
     Promise.all(uniqueRs.map((id) => tmdb(`/movie/${id}`).catch(() => null))),
+    oscarPromise,
   ]);
-
-  // Oscar winners: search by title+year for accuracy
-  const oscarMovies = await Promise.all(
-    OSCAR_WINNERS.map(async ({ title, year }) => {
-      try {
-        const data = await tmdb("/search/movie", { query: title, year: String(year), include_adult: "false" });
-        const hit = data.results?.[0];
-        return hit ? { id: hit.id, title: hit.title, poster_path: hit.poster_path, release_date: hit.release_date } : null;
-      } catch {
-        return null;
-      }
-    })
-  );
 
   return NextResponse.json({
     imdb: imdbMovies.filter(Boolean).slice(0, 100),
-    rottenTomatoes: rtMovies.slice(0, 100),
     rollingStone: rsMovies.filter(Boolean).slice(0, 100),
     oscars: oscarMovies.filter(Boolean),
   });

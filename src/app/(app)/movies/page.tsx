@@ -49,7 +49,7 @@ export default function MoviesPage() {
   const [confirmDelete, setConfirmDelete] = useState<{ umId: string; title: string } | null>(null);
   const [genreBrowserOpen, setGenreBrowserOpen] = useState(false);
 
-  const [curated, setCurated] = useState<{ imdb: CuratedMovie[]; rottenTomatoes: CuratedMovie[]; rollingStone: CuratedMovie[]; oscars: CuratedMovie[] } | null>(null);
+  const [curated, setCurated] = useState<{ imdb: CuratedMovie[]; rollingStone: CuratedMovie[]; oscars: CuratedMovie[] } | null>(null);
   const [curatedAddingId, setCuratedAddingId] = useState<number | null>(null);
 
   const supabase = createClient();
