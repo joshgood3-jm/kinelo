@@ -223,9 +223,9 @@ const ROLLING_STONE_IDS = [
 ];
 
 // Wikidata SPARQL helper — all results cached 24h by Next.js fetch
-// Award QIDs: Q102427=Best Picture, Q103360=Best Actor, Q103361=Best Actress
-//             Q103362=Best Director, Q56869=Best Original Screenplay, Q56870=Best Adapted
-// Verify/update at https://www.wikidata.org/wiki/Special:Search
+// Award QIDs — verified via Wikidata SPARQL 2026-10-30:
+// Q102427=Best Picture, Q103916=Best Actor, Q103618=Best Actress
+// Q103360=Best Director, Q41417=Best Original Screenplay, Q107258=Best Adapted Screenplay
 async function wikidataSparql(sparql: string): Promise<{ tmdbId: number; year: number }[]> {
   const url = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`;
   const res = await fetch(url, {
@@ -262,20 +262,20 @@ function personAwardQuery(awardId: string) {
 } GROUP BY ?film ORDER BY DESC(?pubDate)`;
 }
 
-// Screenplay: combines Best Original (Q56869) and Best Adapted (Q56870)
+// Screenplay: combines Best Original Screenplay (Q41417) and Best Adapted Screenplay (Q107258)
 function screenplayQuery() {
   return `SELECT ?film (SAMPLE(?tmdbId) AS ?tmdbId) (MIN(?pubDate) AS ?pubDate) WHERE {
-  { ?person p:P166 ?stmt. ?stmt ps:P166 wd:Q56869. ?stmt pq:P1686 ?film. }
+  { ?person p:P166 ?stmt. ?stmt ps:P166 wd:Q41417. ?stmt pq:P1686 ?film. }
   UNION
-  { ?person p:P166 ?stmt. ?stmt ps:P166 wd:Q56870. ?stmt pq:P1686 ?film. }
+  { ?person p:P166 ?stmt. ?stmt ps:P166 wd:Q107258. ?stmt pq:P1686 ?film. }
   ?film wdt:P4947 ?tmdbId. ?film wdt:P577 ?pubDate.
 } GROUP BY ?film ORDER BY DESC(?pubDate)`;
 }
 
 function oscarQueryForCategory(cat: string): string | null {
-  if (cat === "actor")      return personAwardQuery("Q103360");
-  if (cat === "actress")    return personAwardQuery("Q103361");
-  if (cat === "director")   return personAwardQuery("Q103362");
+  if (cat === "actor")      return personAwardQuery("Q103916");
+  if (cat === "actress")    return personAwardQuery("Q103618");
+  if (cat === "director")   return personAwardQuery("Q103360");
   if (cat === "screenplay") return screenplayQuery();
   return null;
 }

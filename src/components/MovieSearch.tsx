@@ -1,6 +1,6 @@
 "use client";
 import { useState, useCallback, useRef } from "react";
-import { Search, X, Plus, Check, ChevronLeft, User } from "lucide-react";
+import { Search, X, Plus, Check, User } from "lucide-react";
 import { posterUrl } from "@/lib/tmdb";
 import type { TMDBMovie } from "@/types";
 import Image from "next/image";
@@ -9,6 +9,7 @@ interface Props {
   onAdd: (movie: TMDBMovie) => Promise<void>;
   existingIds?: Set<number>;
   onGenreBrowse?: () => void;
+  onPersonBrowse?: (person: TMDBPerson) => void;
 }
 
 type SearchMode = "title" | "actor" | "director" | "genre";
@@ -21,12 +22,11 @@ interface TMDBPerson {
   known_for: Array<{ title?: string; name?: string }>;
 }
 
-export default function MovieSearch({ onAdd, existingIds = new Set(), onGenreBrowse }: Props) {
+export default function MovieSearch({ onAdd, existingIds = new Set(), onGenreBrowse, onPersonBrowse }: Props) {
   const [mode, setMode] = useState<SearchMode>("title");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TMDBMovie[]>([]);
   const [personResults, setPersonResults] = useState<TMDBPerson[]>([]);
-  const [selectedPerson, setSelectedPerson] = useState<TMDBPerson | null>(null);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -35,7 +35,6 @@ export default function MovieSearch({ onAdd, existingIds = new Set(), onGenreBro
     setQuery("");
     setResults([]);
     setPersonResults([]);
-    setSelectedPerson(null);
   }
 
   function switchMode(m: SearchMode) {
@@ -63,15 +62,9 @@ export default function MovieSearch({ onAdd, existingIds = new Set(), onGenreBro
     }, 300);
   }, []);
 
-  async function selectPerson(person: TMDBPerson) {
-    setSelectedPerson(person);
-    setPersonResults([]);
-    setQuery("");
-    setLoading(true);
-    const res = await fetch(`/api/movies?mode=credits&personId=${person.id}`);
-    const data = await res.json();
-    setResults(data.results ?? []);
-    setLoading(false);
+  function selectPerson(person: TMDBPerson) {
+    clearSearch();
+    onPersonBrowse?.(person);
   }
 
   async function handleAdd(movie: TMDBMovie) {
@@ -104,36 +97,24 @@ export default function MovieSearch({ onAdd, existingIds = new Set(), onGenreBro
       {/* Search input (title / actor / director only) */}
       {mode !== "genre" && (
         <div className="relative">
-          {/* Person breadcrumb */}
-          {selectedPerson && (
-            <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">
-              <button onClick={() => { setSelectedPerson(null); setResults([]); }} className="flex items-center gap-1 hover:text-foreground transition-colors">
-                <ChevronLeft size={14} /> Back
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); search(e.target.value, mode); }}
+              placeholder={
+                mode === "actor" ? "Search actor name…" :
+                mode === "director" ? "Search director name…" :
+                "Search for a movie…"
+              }
+              className="w-full pl-9 pr-9 py-3 bg-card border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors text-sm"
+            />
+            {query && (
+              <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                <X size={16} />
               </button>
-              <span className="text-foreground font-medium">{selectedPerson.name}</span>
-            </div>
-          )}
-
-          {!selectedPerson && (
-            <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={query}
-                onChange={(e) => { setQuery(e.target.value); search(e.target.value, mode); }}
-                placeholder={
-                  mode === "actor" ? "Search actor name…" :
-                  mode === "director" ? "Search director name…" :
-                  "Search for a movie…"
-                }
-                className="w-full pl-9 pr-9 py-3 bg-card border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors text-sm"
-              />
-              {query && (
-                <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-          )}
+            )}
+          </div>
 
           {showDropdown && (
             <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-card border border-border rounded-xl overflow-hidden shadow-2xl">

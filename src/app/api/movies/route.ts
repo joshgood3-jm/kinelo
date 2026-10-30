@@ -35,11 +35,11 @@ export async function GET(req: NextRequest) {
         ...(data.cast ?? []),
         ...((data.crew ?? []).filter((c: { job: string }) => c.job === "Director")),
       ].filter((m: { id: number; vote_count?: number }) => {
-        if (seen.has(m.id) || (m.vote_count ?? 0) < 50) return false;
+        if (seen.has(m.id) || (m.vote_count ?? 0) < 20) return false;
         seen.add(m.id);
         return true;
       }).sort((a: { popularity: number }, b: { popularity: number }) => b.popularity - a.popularity)
-        .slice(0, 20);
+        .slice(0, 60);
       return NextResponse.json({ results: combined });
     }
 

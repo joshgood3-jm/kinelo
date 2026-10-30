@@ -5,6 +5,7 @@ import { getMovieDetail, tmdbMovieToMovie, posterUrl } from "@/lib/tmdb";
 import { INITIAL_ELO } from "@/lib/elo";
 import MovieSearch from "@/components/MovieSearch";
 import GenreBrowserModal from "@/components/GenreBrowserModal";
+import PersonBrowserModal from "@/components/PersonBrowserModal";
 import LetterboxdImport from "@/components/LetterboxdImport";
 import QuickRankModal, { type QuickRankMovie } from "@/components/QuickRankModal";
 import Image from "next/image";
@@ -57,6 +58,7 @@ export default function MoviesPage() {
   const [quickRank, setQuickRank] = useState<{ newMovie: QuickRankMovie; pool: QuickRankMovie[] } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ umId: string; title: string } | null>(null);
   const [genreBrowserOpen, setGenreBrowserOpen] = useState(false);
+  const [personBrowser, setPersonBrowser] = useState<{ id: number; name: string; profile_path: string | null; known_for_department: string } | null>(null);
 
   const [curated, setCurated] = useState<{ imdb: CuratedMovie[]; rollingStone: CuratedMovie[]; oscars: CuratedMovie[] } | null>(null);
   const [curatedAddingId, setCuratedAddingId] = useState<number | null>(null);
@@ -206,7 +208,7 @@ export default function MoviesPage() {
       {/* My List tab */}
       {tab === "mine" && (
         <div className="px-4 pb-24 space-y-3">
-          <MovieSearch onAdd={addMovie} existingIds={existingIds} onGenreBrowse={() => setGenreBrowserOpen(true)} />
+          <MovieSearch onAdd={addMovie} existingIds={existingIds} onGenreBrowse={() => setGenreBrowserOpen(true)} onPersonBrowse={(p) => setPersonBrowser(p)} />
           {userMovies.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <p className="text-4xl mb-4">🎬</p>
@@ -313,6 +315,15 @@ export default function MoviesPage() {
         existingIds={existingIds}
         onAdd={addMovie}
         onClose={() => setGenreBrowserOpen(false)}
+      />
+    )}
+
+    {personBrowser && (
+      <PersonBrowserModal
+        person={personBrowser}
+        existingIds={existingIds}
+        onAdd={addMovie}
+        onClose={() => setPersonBrowser(null)}
       />
     )}
 
