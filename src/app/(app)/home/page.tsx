@@ -109,9 +109,10 @@ export default async function HomePage() {
         {friendActivity && friendActivity.length > 0 ? (
           <div className="flex gap-2 flex-wrap">
             {friendActivity.map((f) => {
-              const friend = (f.requester as { id: string; username: string })?.id === user.id
-                ? f.addressee as { id: string; username: string }
-                : f.requester as { id: string; username: string };
+              type FriendProfile = { id: string; username: string };
+              const requester = f.requester as unknown as FriendProfile;
+              const addressee = f.addressee as unknown as FriendProfile;
+              const friend = requester?.id === user.id ? addressee : requester;
               return (
                 <Link
                   key={friend?.id}
