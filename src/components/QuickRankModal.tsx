@@ -4,7 +4,7 @@ import Image from "next/image";
 import { posterUrl } from "@/lib/tmdb";
 import { newRatings } from "@/lib/elo";
 import { createClient } from "@/lib/supabase/client";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, X } from "lucide-react";
 
 export interface QuickRankMovie {
   umId: string;
@@ -19,6 +19,7 @@ interface Props {
   newMovie: QuickRankMovie;
   pool: QuickRankMovie[]; // sorted by elo desc
   onDone: () => void;
+  onClose?: () => void; // dismiss without navigating away
 }
 
 const MAX_COMPARISONS = 6;
@@ -37,7 +38,7 @@ function pickOpponents(pool: QuickRankMovie[], count: number): QuickRankMovie[] 
   });
 }
 
-export default function QuickRankModal({ userId, newMovie, pool, onDone }: Props) {
+export default function QuickRankModal({ userId, newMovie, pool, onDone, onClose }: Props) {
   const supabase = createClient();
 
   const maxComps = Math.min(MAX_COMPARISONS, pool.length);
@@ -89,7 +90,13 @@ export default function QuickRankModal({ userId, newMovie, pool, onDone }: Props
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background/95 backdrop-blur-sm">
       {/* Header */}
-      <div className="px-4 pt-10 pb-4 text-center">
+      <div className="relative px-4 pt-10 pb-4 text-center">
+        <button
+          onClick={onClose ?? onDone}
+          className="absolute right-4 top-10 p-1.5 rounded-full bg-muted hover:bg-muted/80 text-muted-foreground transition-colors"
+        >
+          <X size={18} />
+        </button>
         {done ? (
           <div>
             <CheckCircle size={32} className="text-primary mx-auto mb-2" />
@@ -176,12 +183,22 @@ export default function QuickRankModal({ userId, newMovie, pool, onDone }: Props
       {/* Footer */}
       <div className="px-6 py-8 flex flex-col gap-3">
         {done ? (
-          <button
-            onClick={onDone}
-            className="w-full py-3.5 bg-primary text-primary-foreground rounded-2xl font-semibold text-base"
-          >
-            See My List
-          </button>
+          <>
+            <button
+              onClick={onDone}
+              className="w-full py-3.5 bg-primary text-primary-foreground rounded-2xl font-semibold text-base"
+            >
+              Go to My List
+            </button>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="text-muted-foreground text-sm text-center"
+              >
+                Stay here
+              </button>
+            )}
+          </>
         ) : (
           <button
             onClick={() => { setDone(true); onDone(); }}

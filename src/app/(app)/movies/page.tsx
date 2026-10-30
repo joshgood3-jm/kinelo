@@ -124,6 +124,11 @@ export default function MoviesPage() {
     setTab("mine");
   }
 
+  function handleQuickRankClose() {
+    setQuickRank(null);
+    loadMovies();
+  }
+
   const curatedList: CuratedMovie[] =
     tab === "imdb" ? (curated?.imdb ?? []) :
     tab === "rt" ? (curated?.rottenTomatoes ?? []) :
@@ -267,6 +272,7 @@ export default function MoviesPage() {
         newMovie={quickRank.newMovie}
         pool={quickRank.pool}
         onDone={handleQuickRankDone}
+        onClose={handleQuickRankClose}
       />
     )}
 
