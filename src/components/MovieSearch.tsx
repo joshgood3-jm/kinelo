@@ -64,7 +64,8 @@ export default function MovieSearch({ onAdd, existingIds = new Set() }: Props) {
         const data = await res.json();
         setResults(data.results ?? []);
       } else {
-        const res = await fetch(`/api/movies?mode=person&q=${encodeURIComponent(q)}`);
+        const department = currentMode === "actor" ? "Acting" : "Directing";
+        const res = await fetch(`/api/movies?mode=person&q=${encodeURIComponent(q)}&department=${department}`);
         const data = await res.json();
         setPersonResults(data.results ?? []);
       }

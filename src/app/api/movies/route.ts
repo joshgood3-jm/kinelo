@@ -18,8 +18,12 @@ export async function GET(req: NextRequest) {
   try {
     if (mode === "person") {
       if (!q.trim()) return NextResponse.json({ results: [] });
+      const department = req.nextUrl.searchParams.get("department"); // "Acting" | "Directing"
       const data = await tmdbGet("/search/person", { query: q, include_adult: "false" });
-      return NextResponse.json({ results: data.results ?? [] });
+      const results = (data.results ?? []).filter((p: { known_for_department: string }) =>
+        !department || p.known_for_department === department
+      );
+      return NextResponse.json({ results });
     }
 
     if (mode === "credits") {
