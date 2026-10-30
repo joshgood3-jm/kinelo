@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { getMovieDetail, getSimilarMovies, discoverMovies } from "@/lib/tmdb";
+import { getMovieDetail, getSimilarMovies, discoverMovies, getPopularMovies } from "@/lib/tmdb";
 import { NextResponse } from "next/server";
 import type { TMDBMovieDetail } from "@/types";
 
@@ -17,9 +17,7 @@ export async function GET() {
     .limit(20);
 
   if (!userMovies || userMovies.length === 0) {
-    // No rankings yet — return popular films
-    const { default: tmdb } = await import("@/lib/tmdb");
-    const popular = await tmdb.getPopularMovies();
+    const popular = await getPopularMovies();
     return NextResponse.json({
       recommendations: popular.results.slice(0, 10).map((m) => ({
         movie: m,

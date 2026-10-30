@@ -7,6 +7,7 @@ export interface TMDBMovie {
   release_date: string;
   genre_ids: number[];
   vote_average: number;
+  vote_count?: number;
 }
 
 export interface TMDBMovieDetail extends TMDBMovie {

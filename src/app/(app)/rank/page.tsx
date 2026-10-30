@@ -44,10 +44,10 @@ export default function RankPage() {
       id: um.id,
       movie_id: um.movie_id,
       elo_score: um.elo_score,
-      letterboxd_rating: (um.letterboxd_rating as number | null) ?? null,
-      title: (um.movies as MovieRow).title,
-      poster_path: (um.movies as MovieRow).poster_path,
-      year: (um.movies as MovieRow).year,
+      letterboxd_rating: (um.letterboxd_rating as unknown as number | null) ?? null,
+      title: (um.movies as unknown as MovieRow).title,
+      poster_path: (um.movies as unknown as MovieRow).poster_path,
+      year: (um.movies as unknown as MovieRow).year,
     }));
     setMovies(ranked);
     setLoading(false);
