@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const TMDB_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const BASE = "https://api.themoviedb.org/3";
@@ -222,30 +222,18 @@ const ROLLING_STONE_IDS = [
   670,    // Oldboy
 ];
 
-// Fetch Oscar Best Picture winners from Wikidata (includes TMDB IDs)
-// Q102427 = Academy Award for Best Picture, P4947 = TMDB movie ID
-async function fetchOscarWinnersFromWikidata(): Promise<{ tmdbId: number; year: number }[]> {
-  const sparql = `
-SELECT ?film (SAMPLE(?tmdbId) AS ?tmdbId) (MIN(?pubDate) AS ?pubDate) WHERE {
-  ?film wdt:P166 wd:Q102427.
-  ?film wdt:P4947 ?tmdbId.
-  ?film wdt:P577 ?pubDate.
-}
-GROUP BY ?film
-ORDER BY DESC(?pubDate)
-`.trim();
-
+// Wikidata SPARQL helper — all results cached 24h by Next.js fetch
+// Award QIDs: Q102427=Best Picture, Q103360=Best Actor, Q103361=Best Actress
+//             Q103362=Best Director, Q56869=Best Original Screenplay, Q56870=Best Adapted
+// Verify/update at https://www.wikidata.org/wiki/Special:Search
+async function wikidataSparql(sparql: string): Promise<{ tmdbId: number; year: number }[]> {
   const url = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`;
   const res = await fetch(url, {
-    headers: {
-      Accept: "application/sparql-results+json",
-      "User-Agent": "Kinelo/1.0 (https://kinelo.vercel.app)",
-    },
+    headers: { Accept: "application/sparql-results+json", "User-Agent": "Kinelo/1.0 (https://kinelo.vercel.app)" },
     next: { revalidate: 86400 },
   });
   if (!res.ok) throw new Error(`Wikidata ${res.status}`);
   const data = await res.json();
-
   const seen = new Set<number>();
   return (data.results?.bindings ?? [])
     .map((r: Record<string, { value: string }>) => ({
@@ -257,6 +245,39 @@ ORDER BY DESC(?pubDate)
       seen.add(tmdbId);
       return true;
     });
+}
+
+// Best Picture: the film itself receives the award directly
+function bestPictureQuery() {
+  return `SELECT ?film (SAMPLE(?tmdbId) AS ?tmdbId) (MIN(?pubDate) AS ?pubDate) WHERE {
+  ?film wdt:P166 wd:Q102427. ?film wdt:P4947 ?tmdbId. ?film wdt:P577 ?pubDate.
+} GROUP BY ?film ORDER BY DESC(?pubDate)`;
+}
+
+// Actor/Actress/Director: a person receives the award for a specific film (P1686 qualifier)
+function personAwardQuery(awardId: string) {
+  return `SELECT ?film (SAMPLE(?tmdbId) AS ?tmdbId) (MIN(?pubDate) AS ?pubDate) WHERE {
+  ?person p:P166 ?stmt. ?stmt ps:P166 wd:${awardId}. ?stmt pq:P1686 ?film.
+  ?film wdt:P4947 ?tmdbId. ?film wdt:P577 ?pubDate.
+} GROUP BY ?film ORDER BY DESC(?pubDate)`;
+}
+
+// Screenplay: combines Best Original (Q56869) and Best Adapted (Q56870)
+function screenplayQuery() {
+  return `SELECT ?film (SAMPLE(?tmdbId) AS ?tmdbId) (MIN(?pubDate) AS ?pubDate) WHERE {
+  { ?person p:P166 ?stmt. ?stmt ps:P166 wd:Q56869. ?stmt pq:P1686 ?film. }
+  UNION
+  { ?person p:P166 ?stmt. ?stmt ps:P166 wd:Q56870. ?stmt pq:P1686 ?film. }
+  ?film wdt:P4947 ?tmdbId. ?film wdt:P577 ?pubDate.
+} GROUP BY ?film ORDER BY DESC(?pubDate)`;
+}
+
+function oscarQueryForCategory(cat: string): string | null {
+  if (cat === "actor")      return personAwardQuery("Q103360");
+  if (cat === "actress")    return personAwardQuery("Q103361");
+  if (cat === "director")   return personAwardQuery("Q103362");
+  if (cat === "screenplay") return screenplayQuery();
+  return null;
 }
 
 // Kept as fallback — not used in GET but available if Wikidata is down
@@ -360,21 +381,28 @@ const _OSCAR_BACKUP = [
   { title: "Wings", year: 1927 },
 ];
 
-export async function GET() {
-  // For IMDb + RS: fetch each by ID in parallel
+export async function GET(req: NextRequest) {
+  const oscar = req.nextUrl.searchParams.get("oscar");
+
+  // On-demand Oscar category (actor/actress/director/screenplay) — fetched lazily by the UI
+  if (oscar) {
+    const sparql = oscarQueryForCategory(oscar);
+    if (!sparql) return NextResponse.json({ results: [] });
+    const winners = await wikidataSparql(sparql).catch(() => [] as { tmdbId: number; year: number }[]);
+    const movies = await Promise.all(winners.map(({ tmdbId }) => tmdb(`/movie/${tmdbId}`).catch(() => null)));
+    return NextResponse.json({ results: movies.filter(Boolean) });
+  }
+
+  // Default: IMDb + RS + Best Picture
   const uniqueImdb = [...new Set(IMDB_IDS)];
   const uniqueRs = [...new Set(ROLLING_STONE_IDS)];
 
-  // Oscar winners: pull from Wikidata (always current), fall back to title search
-  const oscarPromise = fetchOscarWinnersFromWikidata()
+  const oscarPromise = wikidataSparql(bestPictureQuery())
     .then((winners) =>
-      Promise.all(
-        winners.map(({ tmdbId }) => tmdb(`/movie/${tmdbId}`).catch(() => null))
-      )
+      Promise.all(winners.map(({ tmdbId }) => tmdb(`/movie/${tmdbId}`).catch(() => null)))
     )
-    .catch(async () => {
-      // Wikidata unavailable — fall back to title+year search
-      return Promise.all(
+    .catch(async () =>
+      Promise.all(
         _OSCAR_BACKUP.map(async ({ title, year }) => {
           try {
             const data = await tmdb("/search/movie", { query: title, year: String(year), include_adult: "false" });
@@ -382,8 +410,8 @@ export async function GET() {
             return hit ? { id: hit.id, title: hit.title, poster_path: hit.poster_path, release_date: hit.release_date } : null;
           } catch { return null; }
         })
-      );
-    });
+      )
+    );
 
   const [imdbMovies, rsMovies, oscarMovies] = await Promise.all([
     Promise.all(uniqueImdb.map((id) => tmdb(`/movie/${id}`).catch(() => null))),

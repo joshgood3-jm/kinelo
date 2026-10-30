@@ -20,12 +20,21 @@ interface CuratedMovie {
 }
 
 type Tab = "mine" | "imdb" | "rs" | "oscars";
+type OscarSubtab = "picture" | "actor" | "actress" | "director" | "screenplay";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "mine", label: "My List" },
   { id: "oscars", label: "🏆 Oscars" },
   { id: "imdb", label: "IMDb" },
   { id: "rs", label: "Rolling Stone" },
+];
+
+const OSCAR_SUBTABS: { id: OscarSubtab; label: string }[] = [
+  { id: "picture",    label: "Best Picture" },
+  { id: "actor",      label: "Best Actor" },
+  { id: "actress",    label: "Best Actress" },
+  { id: "director",   label: "Best Director" },
+  { id: "screenplay", label: "Best Screenplay" },
 ];
 
 function toQuickRankMovie(um: UserMovie): QuickRankMovie {
@@ -51,6 +60,9 @@ export default function MoviesPage() {
 
   const [curated, setCurated] = useState<{ imdb: CuratedMovie[]; rollingStone: CuratedMovie[]; oscars: CuratedMovie[] } | null>(null);
   const [curatedAddingId, setCuratedAddingId] = useState<number | null>(null);
+  const [oscarSubtab, setOscarSubtab] = useState<OscarSubtab>("picture");
+  const [oscarCache, setOscarCache] = useState<Partial<Record<OscarSubtab, CuratedMovie[]>>>({});
+  const [oscarLoading, setOscarLoading] = useState<OscarSubtab | null>(null);
 
   const supabase = createClient();
   const existingIds = new Set(userMovies.map((um) => um.movie_id));
@@ -130,10 +142,25 @@ export default function MoviesPage() {
     loadMovies();
   }
 
+  async function selectOscarSubtab(sub: OscarSubtab) {
+    setOscarSubtab(sub);
+    if (sub === "picture" || oscarCache[sub] !== undefined) return;
+    setOscarLoading(sub);
+    try {
+      const res = await fetch(`/api/curated?oscar=${sub}`);
+      const data = await res.json();
+      setOscarCache((prev) => ({ ...prev, [sub]: data.results ?? [] }));
+    } catch {
+      setOscarCache((prev) => ({ ...prev, [sub]: [] }));
+    }
+    setOscarLoading(null);
+  }
+
   const curatedList: CuratedMovie[] =
-    tab === "imdb" ? (curated?.imdb ?? []) :
-    tab === "rs" ? (curated?.rollingStone ?? []) :
-    tab === "oscars" ? (curated?.oscars ?? []) : [];
+    tab === "imdb"   ? (curated?.imdb ?? []) :
+    tab === "rs"     ? (curated?.rollingStone ?? []) :
+    tab === "oscars" && oscarSubtab === "picture" ? (curated?.oscars ?? []) :
+    tab === "oscars" ? (oscarCache[oscarSubtab] ?? []) : [];
 
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading…</div>;
@@ -219,10 +246,29 @@ export default function MoviesPage() {
         </div>
       )}
 
+      {/* Oscar subtabs */}
+      {tab === "oscars" && (
+        <div className="flex gap-1 overflow-x-auto scrollbar-hide px-4 pb-3">
+          {OSCAR_SUBTABS.map((sub) => (
+            <button
+              key={sub.id}
+              onClick={() => selectOscarSubtab(sub.id)}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                oscarSubtab === sub.id
+                  ? "bg-amber-500 text-white"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {sub.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Curated list tabs */}
       {tab !== "mine" && (
         <div className="px-4 pb-24">
-          {!curated ? (
+          {!curated || oscarLoading === oscarSubtab ? (
             <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-muted-foreground" /></div>
           ) : (
             <div className="space-y-2 mt-2">
