@@ -224,6 +224,7 @@ const ROLLING_STONE_IDS = [
 
 // Oscar Best Picture winners (title, release year)
 const OSCAR_WINNERS = [
+  { title: "Anora", year: 2024 },
   { title: "Oppenheimer", year: 2023 },
   { title: "Everything Everywhere All at Once", year: 2022 },
   { title: "CODA", year: 2021 },
