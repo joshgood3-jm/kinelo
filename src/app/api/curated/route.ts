@@ -254,9 +254,12 @@ function bestPictureQuery() {
 } GROUP BY ?film ORDER BY DESC(?pubDate)`;
 }
 
-// Actor/Actress/Director: a person receives the award for a specific film (P1686 qualifier)
+// Actor/Actress/Director: a person receives the award for a specific film (P1686 qualifier).
+// The wdt:P166 truthy anchor narrows the candidate set first via the indexed triple store,
+// preventing Blazegraph StackOverflow from scanning all P166 statements globally.
 function personAwardQuery(awardId: string) {
   return `SELECT ?film (SAMPLE(?tmdbId) AS ?tmdbId) (MIN(?pubDate) AS ?pubDate) WHERE {
+  ?person wdt:P166 wd:${awardId}.
   ?person p:P166 ?stmt. ?stmt ps:P166 wd:${awardId}. ?stmt pq:P1686 ?film.
   ?film wdt:P4947 ?tmdbId. ?film wdt:P577 ?pubDate.
 } GROUP BY ?film ORDER BY DESC(?pubDate)`;
@@ -265,9 +268,9 @@ function personAwardQuery(awardId: string) {
 // Screenplay: combines Best Original Screenplay (Q41417) and Best Adapted Screenplay (Q107258)
 function screenplayQuery() {
   return `SELECT ?film (SAMPLE(?tmdbId) AS ?tmdbId) (MIN(?pubDate) AS ?pubDate) WHERE {
-  { ?person p:P166 ?stmt. ?stmt ps:P166 wd:Q41417. ?stmt pq:P1686 ?film. }
+  { ?person wdt:P166 wd:Q41417. ?person p:P166 ?stmt. ?stmt ps:P166 wd:Q41417. ?stmt pq:P1686 ?film. }
   UNION
-  { ?person p:P166 ?stmt. ?stmt ps:P166 wd:Q107258. ?stmt pq:P1686 ?film. }
+  { ?person wdt:P166 wd:Q107258. ?person p:P166 ?stmt. ?stmt ps:P166 wd:Q107258. ?stmt pq:P1686 ?film. }
   ?film wdt:P4947 ?tmdbId. ?film wdt:P577 ?pubDate.
 } GROUP BY ?film ORDER BY DESC(?pubDate)`;
 }
@@ -280,7 +283,260 @@ function oscarQueryForCategory(cat: string): string | null {
   return null;
 }
 
-// Kept as fallback — not used in GET but available if Wikidata is down
+// Fallback title+year lists — used when Wikidata returns empty/errors (modern era, 1979–2025)
+const _ACTOR_BACKUP = [
+  { title: "The Brutalist", year: 2024 },         // Adrien Brody
+  { title: "Oppenheimer", year: 2023 },            // Cillian Murphy
+  { title: "The Whale", year: 2022 },              // Brendan Fraser
+  { title: "King Richard", year: 2021 },           // Will Smith
+  { title: "The Father", year: 2020 },             // Anthony Hopkins
+  { title: "Joker", year: 2019 },                  // Joaquin Phoenix
+  { title: "Bohemian Rhapsody", year: 2018 },      // Rami Malek
+  { title: "Darkest Hour", year: 2017 },           // Gary Oldman
+  { title: "Manchester by the Sea", year: 2016 },  // Casey Affleck
+  { title: "The Revenant", year: 2015 },           // Leonardo DiCaprio
+  { title: "The Theory of Everything", year: 2014 }, // Eddie Redmayne
+  { title: "Dallas Buyers Club", year: 2013 },     // Matthew McConaughey
+  { title: "Lincoln", year: 2012 },                // Daniel Day-Lewis
+  { title: "The Artist", year: 2011 },             // Jean Dujardin
+  { title: "The King's Speech", year: 2010 },      // Colin Firth
+  { title: "Crazy Heart", year: 2009 },            // Jeff Bridges
+  { title: "Milk", year: 2008 },                   // Sean Penn
+  { title: "There Will Be Blood", year: 2007 },    // Daniel Day-Lewis
+  { title: "The Last King of Scotland", year: 2006 }, // Forest Whitaker
+  { title: "Capote", year: 2005 },                 // Philip Seymour Hoffman
+  { title: "Ray", year: 2004 },                    // Jamie Foxx
+  { title: "Mystic River", year: 2003 },           // Sean Penn
+  { title: "The Pianist", year: 2002 },            // Adrien Brody
+  { title: "Training Day", year: 2001 },           // Denzel Washington
+  { title: "Gladiator", year: 2000 },              // Russell Crowe
+  { title: "American Beauty", year: 1999 },        // Kevin Spacey
+  { title: "Life Is Beautiful", year: 1997 },      // Roberto Benigni
+  { title: "As Good as It Gets", year: 1997 },     // Jack Nicholson
+  { title: "Shine", year: 1996 },                  // Geoffrey Rush
+  { title: "Leaving Las Vegas", year: 1995 },      // Nicolas Cage
+  { title: "Forrest Gump", year: 1994 },           // Tom Hanks
+  { title: "Philadelphia", year: 1993 },           // Tom Hanks
+  { title: "Scent of a Woman", year: 1992 },       // Al Pacino
+  { title: "The Silence of the Lambs", year: 1991 }, // Anthony Hopkins
+  { title: "Reversal of Fortune", year: 1990 },    // Jeremy Irons
+  { title: "My Left Foot", year: 1989 },           // Daniel Day-Lewis
+  { title: "Rain Man", year: 1988 },               // Dustin Hoffman
+  { title: "Wall Street", year: 1987 },            // Michael Douglas
+  { title: "The Color of Money", year: 1986 },     // Paul Newman
+  { title: "Kiss of the Spider Woman", year: 1985 }, // William Hurt
+  { title: "Amadeus", year: 1984 },                // F. Murray Abraham
+  { title: "Tender Mercies", year: 1983 },         // Robert Duvall
+  { title: "Gandhi", year: 1982 },                 // Ben Kingsley
+  { title: "On Golden Pond", year: 1981 },         // Henry Fonda
+  { title: "Raging Bull", year: 1980 },            // Robert De Niro
+  { title: "Kramer vs. Kramer", year: 1979 },      // Dustin Hoffman
+];
+
+const _ACTRESS_BACKUP = [
+  { title: "The Substance", year: 2024 },          // Demi Moore
+  { title: "Poor Things", year: 2023 },            // Emma Stone
+  { title: "Tár", year: 2022 },                    // Cate Blanchett
+  { title: "The Eyes of Tammy Faye", year: 2021 }, // Jessica Chastain
+  { title: "Nomadland", year: 2020 },              // Frances McDormand
+  { title: "Judy", year: 2019 },                   // Renée Zellweger
+  { title: "The Favourite", year: 2018 },          // Olivia Colman
+  { title: "Three Billboards Outside Ebbing, Missouri", year: 2017 }, // Frances McDormand
+  { title: "La La Land", year: 2016 },             // Emma Stone
+  { title: "Room", year: 2015 },                   // Brie Larson
+  { title: "Still Alice", year: 2014 },            // Julianne Moore
+  { title: "Blue Jasmine", year: 2013 },           // Cate Blanchett
+  { title: "Silver Linings Playbook", year: 2012 }, // Jennifer Lawrence
+  { title: "The Iron Lady", year: 2011 },          // Meryl Streep
+  { title: "Black Swan", year: 2010 },             // Natalie Portman
+  { title: "The Blind Side", year: 2009 },         // Sandra Bullock
+  { title: "The Reader", year: 2008 },             // Kate Winslet
+  { title: "La Vie en Rose", year: 2007 },         // Marion Cotillard
+  { title: "The Queen", year: 2006 },              // Helen Mirren
+  { title: "Walk the Line", year: 2005 },          // Reese Witherspoon
+  { title: "Million Dollar Baby", year: 2004 },    // Hilary Swank
+  { title: "Monster", year: 2003 },               // Charlize Theron
+  { title: "The Hours", year: 2002 },              // Nicole Kidman
+  { title: "Monster's Ball", year: 2001 },         // Halle Berry
+  { title: "Erin Brockovich", year: 2000 },        // Julia Roberts
+  { title: "Boys Don't Cry", year: 1999 },         // Hilary Swank
+  { title: "Shakespeare in Love", year: 1998 },    // Gwyneth Paltrow
+  { title: "As Good as It Gets", year: 1997 },     // Helen Hunt
+  { title: "Fargo", year: 1996 },                  // Frances McDormand
+  { title: "Dead Man Walking", year: 1995 },       // Susan Sarandon
+  { title: "Blue Sky", year: 1994 },               // Jessica Lange
+  { title: "The Piano", year: 1993 },              // Holly Hunter
+  { title: "Howards End", year: 1992 },            // Emma Thompson
+  { title: "The Silence of the Lambs", year: 1991 }, // Jodie Foster
+  { title: "Misery", year: 1990 },                 // Kathy Bates
+  { title: "Driving Miss Daisy", year: 1989 },     // Jessica Tandy
+  { title: "The Accused", year: 1988 },            // Jodie Foster
+  { title: "Moonstruck", year: 1987 },             // Cher
+  { title: "Children of a Lesser God", year: 1986 }, // Marlee Matlin
+  { title: "The Trip to Bountiful", year: 1985 },  // Geraldine Page
+  { title: "Places in the Heart", year: 1984 },    // Sally Field
+  { title: "Terms of Endearment", year: 1983 },    // Shirley MacLaine
+  { title: "Sophie's Choice", year: 1982 },        // Meryl Streep
+  { title: "On Golden Pond", year: 1981 },         // Katharine Hepburn
+  { title: "Coal Miner's Daughter", year: 1980 },  // Sissy Spacek
+  { title: "Norma Rae", year: 1979 },              // Sally Field
+];
+
+const _DIRECTOR_BACKUP = [
+  { title: "Anora", year: 2024 },                  // Sean Baker
+  { title: "Oppenheimer", year: 2023 },            // Christopher Nolan
+  { title: "Everything Everywhere All at Once", year: 2022 }, // Daniels
+  { title: "The Power of the Dog", year: 2021 },   // Jane Campion
+  { title: "Nomadland", year: 2020 },              // Chloé Zhao
+  { title: "Parasite", year: 2019 },               // Bong Joon-ho
+  { title: "Roma", year: 2018 },                   // Alfonso Cuarón
+  { title: "The Shape of Water", year: 2017 },     // Guillermo del Toro
+  { title: "La La Land", year: 2016 },             // Damien Chazelle
+  { title: "The Revenant", year: 2015 },           // Alejandro G. Iñárritu
+  { title: "Birdman", year: 2014 },                // Alejandro G. Iñárritu
+  { title: "Gravity", year: 2013 },                // Alfonso Cuarón
+  { title: "Life of Pi", year: 2012 },             // Ang Lee
+  { title: "The Artist", year: 2011 },             // Michel Hazanavicius
+  { title: "The King's Speech", year: 2010 },      // Tom Hooper
+  { title: "The Hurt Locker", year: 2008 },        // Kathryn Bigelow
+  { title: "Slumdog Millionaire", year: 2008 },    // Danny Boyle
+  { title: "No Country for Old Men", year: 2007 }, // Coen Brothers
+  { title: "The Departed", year: 2006 },           // Martin Scorsese
+  { title: "Brokeback Mountain", year: 2005 },     // Ang Lee
+  { title: "Million Dollar Baby", year: 2004 },    // Clint Eastwood
+  { title: "The Lord of the Rings: The Return of the King", year: 2003 }, // Peter Jackson
+  { title: "The Pianist", year: 2002 },            // Roman Polanski
+  { title: "A Beautiful Mind", year: 2001 },       // Ron Howard
+  { title: "Traffic", year: 2000 },                // Steven Soderbergh
+  { title: "American Beauty", year: 1999 },        // Sam Mendes
+  { title: "Saving Private Ryan", year: 1998 },    // Steven Spielberg
+  { title: "Titanic", year: 1997 },                // James Cameron
+  { title: "The English Patient", year: 1996 },    // Anthony Minghella
+  { title: "Braveheart", year: 1995 },             // Mel Gibson
+  { title: "Forrest Gump", year: 1994 },           // Robert Zemeckis
+  { title: "Schindler's List", year: 1993 },       // Steven Spielberg
+  { title: "Unforgiven", year: 1992 },             // Clint Eastwood
+  { title: "The Silence of the Lambs", year: 1991 }, // Jonathan Demme
+  { title: "Dances with Wolves", year: 1990 },     // Kevin Costner
+  { title: "Born on the Fourth of July", year: 1989 }, // Oliver Stone
+  { title: "Rain Man", year: 1988 },               // Barry Levinson
+  { title: "The Last Emperor", year: 1987 },       // Bernardo Bertolucci
+  { title: "Platoon", year: 1986 },                // Oliver Stone
+  { title: "Out of Africa", year: 1985 },          // Sydney Pollack
+  { title: "Amadeus", year: 1984 },                // Miloš Forman
+  { title: "Terms of Endearment", year: 1983 },    // James L. Brooks
+  { title: "Gandhi", year: 1982 },                 // Richard Attenborough
+  { title: "Reds", year: 1981 },                   // Warren Beatty
+  { title: "Ordinary People", year: 1980 },        // Robert Redford
+  { title: "Kramer vs. Kramer", year: 1979 },      // Robert Benton
+];
+
+// Combined Original + Adapted Screenplay winners (deduplicated)
+const _SCREENPLAY_BACKUP = [
+  // Original
+  { title: "Anora", year: 2024 },
+  { title: "Anatomy of a Fall", year: 2023 },
+  { title: "Everything Everywhere All at Once", year: 2022 },
+  { title: "Belfast", year: 2021 },
+  { title: "Promising Young Woman", year: 2020 },
+  { title: "Parasite", year: 2019 },
+  { title: "Green Book", year: 2018 },
+  { title: "Get Out", year: 2017 },
+  { title: "Manchester by the Sea", year: 2016 },
+  { title: "Spotlight", year: 2015 },
+  { title: "Birdman", year: 2014 },
+  { title: "Her", year: 2013 },
+  { title: "Django Unchained", year: 2012 },
+  { title: "Midnight in Paris", year: 2011 },
+  { title: "The King's Speech", year: 2010 },
+  { title: "Milk", year: 2008 },
+  { title: "Juno", year: 2007 },
+  { title: "Little Miss Sunshine", year: 2006 },
+  { title: "Eternal Sunshine of the Spotless Mind", year: 2004 },
+  { title: "Lost in Translation", year: 2003 },
+  { title: "Talk to Her", year: 2002 },
+  { title: "Gosford Park", year: 2001 },
+  { title: "American Beauty", year: 1999 },
+  { title: "Shakespeare in Love", year: 1998 },
+  { title: "Good Will Hunting", year: 1997 },
+  { title: "Fargo", year: 1996 },
+  { title: "The Usual Suspects", year: 1995 },
+  { title: "Pulp Fiction", year: 1994 },
+  { title: "The Piano", year: 1993 },
+  { title: "The Crying Game", year: 1992 },
+  { title: "Ghost", year: 1990 },
+  { title: "Dead Poets Society", year: 1989 },
+  { title: "Moonstruck", year: 1987 },
+  { title: "Hannah and Her Sisters", year: 1986 },
+  { title: "Witness", year: 1985 },
+  { title: "Tender Mercies", year: 1983 },
+  { title: "Chariots of Fire", year: 1981 },
+  // Adapted
+  { title: "Conclave", year: 2024 },
+  { title: "Oppenheimer", year: 2023 },
+  { title: "Women Talking", year: 2022 },
+  { title: "CODA", year: 2021 },
+  { title: "The Father", year: 2020 },
+  { title: "Jojo Rabbit", year: 2019 },
+  { title: "BlacKkKlansman", year: 2018 },
+  { title: "Call Me by Your Name", year: 2017 },
+  { title: "Moonlight", year: 2016 },
+  { title: "The Big Short", year: 2015 },
+  { title: "The Imitation Game", year: 2014 },
+  { title: "12 Years a Slave", year: 2013 },
+  { title: "Argo", year: 2012 },
+  { title: "The Descendants", year: 2011 },
+  { title: "The Social Network", year: 2010 },
+  { title: "Slumdog Millionaire", year: 2008 },
+  { title: "No Country for Old Men", year: 2007 },
+  { title: "The Departed", year: 2006 },
+  { title: "Brokeback Mountain", year: 2005 },
+  { title: "Sideways", year: 2004 },
+  { title: "The Lord of the Rings: The Return of the King", year: 2003 },
+  { title: "The Pianist", year: 2002 },
+  { title: "A Beautiful Mind", year: 2001 },
+  { title: "Traffic", year: 2000 },
+  { title: "Gods and Monsters", year: 1998 },
+  { title: "L.A. Confidential", year: 1997 },
+  { title: "Sense and Sensibility", year: 1995 },
+  { title: "Schindler's List", year: 1993 },
+  { title: "The Silence of the Lambs", year: 1991 },
+  { title: "Dances with Wolves", year: 1990 },
+  { title: "Driving Miss Daisy", year: 1989 },
+  { title: "Dangerous Liaisons", year: 1988 },
+  { title: "The Last Emperor", year: 1987 },
+  { title: "Out of Africa", year: 1985 },
+  { title: "Amadeus", year: 1984 },
+  { title: "On Golden Pond", year: 1981 },
+  { title: "Ordinary People", year: 1980 },
+  { title: "Kramer vs. Kramer", year: 1979 },
+];
+
+function oscarBackupForCategory(cat: string) {
+  if (cat === "actor")      return _ACTOR_BACKUP;
+  if (cat === "actress")    return _ACTRESS_BACKUP;
+  if (cat === "director")   return _DIRECTOR_BACKUP;
+  if (cat === "screenplay") return _SCREENPLAY_BACKUP;
+  return [];
+}
+
+async function searchByTitleYear(list: { title: string; year: number }[]) {
+  const seen = new Set<number>();
+  const results = await Promise.all(
+    list.map(async ({ title, year }) => {
+      try {
+        const data = await tmdb("/search/movie", { query: title, year: String(year), include_adult: "false" });
+        const hit = data.results?.[0];
+        if (!hit || seen.has(hit.id)) return null;
+        seen.add(hit.id);
+        return { id: hit.id, title: hit.title, poster_path: hit.poster_path, release_date: hit.release_date };
+      } catch { return null; }
+    })
+  );
+  return results.filter(Boolean);
+}
+
+// Kept as fallback for Best Picture (Wikidata) — title+year list
 const _OSCAR_BACKUP = [
   { title: "One Battle After Another", year: 2025 },
   { title: "Anora", year: 2024 },
@@ -388,9 +644,19 @@ export async function GET(req: NextRequest) {
   if (oscar) {
     const sparql = oscarQueryForCategory(oscar);
     if (!sparql) return NextResponse.json({ results: [] });
-    const winners = await wikidataSparql(sparql).catch(() => [] as { tmdbId: number; year: number }[]);
-    const movies = await Promise.all(winners.map(({ tmdbId }) => tmdb(`/movie/${tmdbId}`).catch(() => null)));
-    return NextResponse.json({ results: movies.filter(Boolean) });
+
+    try {
+      const winners = await wikidataSparql(sparql);
+      if (winners.length > 0) {
+        const movies = await Promise.all(winners.map(({ tmdbId }) => tmdb(`/movie/${tmdbId}`).catch(() => null)));
+        return NextResponse.json({ results: movies.filter(Boolean) });
+      }
+    } catch { /* fall through to backup */ }
+
+    // Fallback: title+year TMDB search
+    const backup = oscarBackupForCategory(oscar);
+    const movies = await searchByTitleYear(backup);
+    return NextResponse.json({ results: movies });
   }
 
   // Default: IMDb + RS + Best Picture
