@@ -58,16 +58,16 @@ export default async function FriendProfilePage({ params }: { params: Promise<{ 
       {/* Top 5 grid */}
       <section>
         <h2 className="text-lg font-semibold mb-3">Top 5</h2>
-        <div className="flex gap-2 overflow-x-auto pb-2">
+        <div className="grid grid-cols-5 gap-2">
           {top5.map((um, i) => {
             const movie = um.movies as { title: string; poster_path: string | null };
             const url = posterUrl(movie.poster_path, "w342");
             return (
-              <div key={um.id} className="flex-shrink-0 relative">
-                <div className="relative w-24 h-36 rounded-xl overflow-hidden bg-muted poster-shadow">
-                  {url && <Image src={url} alt={movie.title} fill className="object-cover" sizes="96px" />}
+              <div key={um.id} className="relative">
+                <div className="relative w-full aspect-[2/3] rounded-xl overflow-hidden bg-muted poster-shadow">
+                  {url && <Image src={url} alt={movie.title} fill className="object-cover" sizes="20vw" />}
                 </div>
-                <div className="absolute -top-1 -left-1 w-6 h-6 bg-primary rounded-full flex items-center justify-center text-xs font-bold text-primary-foreground">
+                <div className="absolute -top-1 -left-1 w-6 h-6 bg-primary rounded-full flex items-center justify-center text-xs font-bold text-primary-foreground z-10">
                   {i + 1}
                 </div>
               </div>
