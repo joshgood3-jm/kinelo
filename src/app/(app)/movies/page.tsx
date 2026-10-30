@@ -18,10 +18,11 @@ interface CuratedMovie {
   release_date?: string;
 }
 
-type Tab = "mine" | "imdb" | "rt" | "rs";
+type Tab = "mine" | "imdb" | "rt" | "rs" | "oscars";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "mine", label: "My List" },
+  { id: "oscars", label: "🏆 Oscars" },
   { id: "imdb", label: "IMDb" },
   { id: "rt", label: "Rotten Tomatoes" },
   { id: "rs", label: "Rolling Stone" },
@@ -47,7 +48,7 @@ export default function MoviesPage() {
   const [quickRank, setQuickRank] = useState<{ newMovie: QuickRankMovie; pool: QuickRankMovie[] } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ umId: string; title: string } | null>(null);
 
-  const [curated, setCurated] = useState<{ imdb: CuratedMovie[]; rottenTomatoes: CuratedMovie[]; rollingStone: CuratedMovie[] } | null>(null);
+  const [curated, setCurated] = useState<{ imdb: CuratedMovie[]; rottenTomatoes: CuratedMovie[]; rollingStone: CuratedMovie[]; oscars: CuratedMovie[] } | null>(null);
   const [curatedAddingId, setCuratedAddingId] = useState<number | null>(null);
 
   const supabase = createClient();
@@ -126,7 +127,8 @@ export default function MoviesPage() {
   const curatedList: CuratedMovie[] =
     tab === "imdb" ? (curated?.imdb ?? []) :
     tab === "rt" ? (curated?.rottenTomatoes ?? []) :
-    tab === "rs" ? (curated?.rollingStone ?? []) : [];
+    tab === "rs" ? (curated?.rollingStone ?? []) :
+    tab === "oscars" ? (curated?.oscars ?? []) : [];
 
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading…</div>;
@@ -224,9 +226,10 @@ export default function MoviesPage() {
                 const isAdded = existingIds.has(movie.id);
                 const isAdding = curatedAddingId === movie.id;
                 const year = movie.release_date?.slice(0, 4);
+                const rankLabel = tab === "oscars" ? `'${String(parseInt(year ?? "0") + 1).slice(2)}` : `#${i + 1}`;
                 return (
                   <div key={movie.id} className="flex items-center gap-3 bg-card border border-border rounded-xl p-3">
-                    <span className="w-8 text-center text-sm font-bold text-muted-foreground flex-shrink-0">#{i + 1}</span>
+                    <span className="w-8 text-center text-sm font-bold text-muted-foreground flex-shrink-0">{rankLabel}</span>
                     <div className="relative w-10 h-14 rounded-lg overflow-hidden bg-muted flex-shrink-0">
                       {url && <Image src={url} alt={movie.title} fill className="object-cover" sizes="40px" />}
                     </div>
