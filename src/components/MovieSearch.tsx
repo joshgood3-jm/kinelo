@@ -8,6 +8,7 @@ import Image from "next/image";
 interface Props {
   onAdd: (movie: TMDBMovie) => Promise<void>;
   existingIds?: Set<number>;
+  onGenreBrowse?: () => void;
 }
 
 type SearchMode = "title" | "actor" | "director" | "genre";
@@ -20,19 +21,7 @@ interface TMDBPerson {
   known_for: Array<{ title?: string; name?: string }>;
 }
 
-const GENRES = [
-  { id: 28, name: "Action" }, { id: 12, name: "Adventure" },
-  { id: 16, name: "Animation" }, { id: 35, name: "Comedy" },
-  { id: 80, name: "Crime" }, { id: 99, name: "Documentary" },
-  { id: 18, name: "Drama" }, { id: 14, name: "Fantasy" },
-  { id: 36, name: "History" }, { id: 27, name: "Horror" },
-  { id: 10402, name: "Music" }, { id: 9648, name: "Mystery" },
-  { id: 10749, name: "Romance" }, { id: 878, name: "Sci-Fi" },
-  { id: 53, name: "Thriller" }, { id: 10752, name: "War" },
-  { id: 37, name: "Western" }, { id: 10751, name: "Family" },
-];
-
-export default function MovieSearch({ onAdd, existingIds = new Set() }: Props) {
+export default function MovieSearch({ onAdd, existingIds = new Set(), onGenreBrowse }: Props) {
   const [mode, setMode] = useState<SearchMode>("title");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TMDBMovie[]>([]);
@@ -52,6 +41,7 @@ export default function MovieSearch({ onAdd, existingIds = new Set() }: Props) {
   function switchMode(m: SearchMode) {
     setMode(m);
     clearSearch();
+    if (m === "genre") onGenreBrowse?.();
   }
 
   const search = useCallback((q: string, currentMode: SearchMode) => {
@@ -84,15 +74,6 @@ export default function MovieSearch({ onAdd, existingIds = new Set() }: Props) {
     setLoading(false);
   }
 
-  async function loadGenre(genreId: number) {
-    setLoading(true);
-    setResults([]);
-    const res = await fetch(`/api/movies?mode=genre&genreId=${genreId}`);
-    const data = await res.json();
-    setResults(data.results ?? []);
-    setLoading(false);
-  }
-
   async function handleAdd(movie: TMDBMovie) {
     setAdding(movie.id);
     await onAdd(movie);
@@ -120,21 +101,8 @@ export default function MovieSearch({ onAdd, existingIds = new Set() }: Props) {
         ))}
       </div>
 
-      {/* Genre grid */}
-      {mode === "genre" ? (
-        <div className="grid grid-cols-3 gap-2">
-          {GENRES.map((g) => (
-            <button
-              key={g.id}
-              onClick={() => loadGenre(g.id)}
-              className="py-2 px-3 bg-muted hover:bg-primary/10 hover:text-primary rounded-lg text-sm font-medium transition-colors text-muted-foreground"
-            >
-              {g.name}
-            </button>
-          ))}
-        </div>
-      ) : (
-        /* Search input */
+      {/* Search input (title / actor / director only) */}
+      {mode !== "genre" && (
         <div className="relative">
           {/* Person breadcrumb */}
           {selectedPerson && (
@@ -220,41 +188,6 @@ export default function MovieSearch({ onAdd, existingIds = new Set() }: Props) {
               })}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Genre results (shown below grid, not in dropdown) */}
-      {mode === "genre" && results.length > 0 && (
-        <div className="mt-2 space-y-1 max-h-72 overflow-y-auto">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-muted-foreground font-medium">Top-rated in genre</p>
-            <button onClick={() => setResults([])} className="text-xs text-muted-foreground hover:text-foreground"><X size={12} /></button>
-          </div>
-          {results.slice(0, 20).map((movie) => {
-            const already = existingIds.has(movie.id);
-            const isAdding = adding === movie.id;
-            const url = posterUrl(movie.poster_path, "w185");
-            return (
-              <div key={movie.id} className="flex items-center gap-3 bg-card border border-border rounded-xl p-3">
-                <div className="relative w-8 h-12 rounded overflow-hidden bg-muted flex-shrink-0">
-                  {url && <Image src={url} alt={movie.title} fill className="object-cover" sizes="32px" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{movie.title}</p>
-                  <p className="text-xs text-muted-foreground">{movie.release_date?.slice(0, 4)}</p>
-                </div>
-                <button
-                  onClick={() => !already && handleAdd(movie)}
-                  disabled={already || isAdding}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors flex-shrink-0 ${
-                    already ? "bg-primary/10 text-primary" : "bg-muted hover:bg-primary/10 hover:text-primary text-muted-foreground"
-                  }`}
-                >
-                  {isAdding ? "…" : already ? <><Check size={11} /> Added</> : <><Plus size={11} /> Add</>}
-                </button>
-              </div>
-            );
-          })}
         </div>
       )}
     </div>

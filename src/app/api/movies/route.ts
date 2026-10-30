@@ -45,12 +45,14 @@ export async function GET(req: NextRequest) {
 
     if (mode === "genre") {
       const genreId = req.nextUrl.searchParams.get("genreId");
+      const page = req.nextUrl.searchParams.get("page") ?? "1";
       if (!genreId) return NextResponse.json({ results: [] });
       const data = await discoverMovies({
         with_genres: genreId,
         sort_by: "vote_average.desc",
         "vote_count.gte": "300",
         language: "en-US",
+        page,
       });
       return NextResponse.json({ results: data.results ?? [] });
     }
