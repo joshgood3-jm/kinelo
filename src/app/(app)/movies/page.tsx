@@ -18,13 +18,12 @@ interface CuratedMovie {
   release_date?: string;
 }
 
-type Tab = "mine" | "imdb" | "rt" | "rs" | "oscars";
+type Tab = "mine" | "imdb" | "rs" | "oscars";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "mine", label: "My List" },
   { id: "oscars", label: "🏆 Oscars" },
   { id: "imdb", label: "IMDb" },
-  { id: "rt", label: "Rotten Tomatoes" },
   { id: "rs", label: "Rolling Stone" },
 ];
 
@@ -131,7 +130,6 @@ export default function MoviesPage() {
 
   const curatedList: CuratedMovie[] =
     tab === "imdb" ? (curated?.imdb ?? []) :
-    tab === "rt" ? (curated?.rottenTomatoes ?? []) :
     tab === "rs" ? (curated?.rollingStone ?? []) :
     tab === "oscars" ? (curated?.oscars ?? []) : [];
 
