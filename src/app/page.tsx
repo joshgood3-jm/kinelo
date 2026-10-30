@@ -21,7 +21,7 @@ export default async function LandingPage() {
           <span className="text-6xl">🎬</span>
         </div>
         <h1 className="text-5xl font-bold mb-3 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-          Cinematch
+          Kinelo
         </h1>
         <p className="text-muted-foreground text-lg mb-2">
           Rank movies head-to-head.

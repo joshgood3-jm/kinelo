@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   let xml: string;
   try {
     const rssRes = await fetch(rssUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Cinematch/1.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Kinelo/1.0)" },
       signal: AbortSignal.timeout(10000),
     });
     if (!rssRes.ok) {

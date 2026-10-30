@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Cinematch — Rank Your Movies",
+  title: "Kinelo — Rank Your Movies",
   description: "Pairwise movie ranking, social lists, and personalized recommendations",
 };
 

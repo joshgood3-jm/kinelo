@@ -31,7 +31,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            🎬 Cinematch
+            🎬 Kinelo
           </Link>
           <p className="text-muted-foreground mt-2">Welcome back</p>
         </div>
