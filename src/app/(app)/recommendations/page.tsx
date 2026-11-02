@@ -1,19 +1,43 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { posterUrl } from "@/lib/tmdb";
+import { posterUrl, getMovieDetail, tmdbMovieToMovie } from "@/lib/tmdb";
 import Image from "next/image";
-import { Sparkles, Plus, Check, X, Bookmark } from "lucide-react";
+import { Sparkles, Plus, Check, X, Bookmark, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { getMovieDetail, tmdbMovieToMovie } from "@/lib/tmdb";
 import { starsToListElo } from "@/lib/elo";
 import QuickRankModal, { type QuickRankMovie } from "@/components/QuickRankModal";
 import StarRatingModal from "@/components/StarRatingModal";
 import type { TMDBMovieDetail, UserMovie } from "@/types";
 
-interface Rec {
-  movie: TMDBMovieDetail;
-  score: number;
-  reasons: string[];
+const TRAKT_KEY = process.env.NEXT_PUBLIC_TRAKT_API_KEY!;
+const TRAKT_HEADERS = {
+  "Content-Type": "application/json",
+  "Accept": "application/json",
+  "trakt-api-version": "2",
+  "trakt-api-key": TRAKT_KEY,
+};
+
+const GENRE_ID_MAP: Record<number, string> = {
+  28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy",
+  80: "Crime", 99: "Documentary", 18: "Drama", 10751: "Family",
+  14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music",
+  9648: "Mystery", 10749: "Romance", 878: "Science Fiction",
+  10770: "TV Movie", 53: "Thriller", 10752: "War", 37: "Western",
+};
+
+interface Rec { movie: TMDBMovieDetail; score: number; reasons: string[] }
+
+async function traktRelated(tmdbId: number): Promise<{ tmdbId: number }[]> {
+  const s = await fetch(`https://api.trakt.tv/search/tmdb/${tmdbId}?type=movie`, { headers: TRAKT_HEADERS });
+  if (!s.ok) return [];
+  const sd = await s.json();
+  const slug = sd?.[0]?.movie?.ids?.slug;
+  if (!slug) return [];
+  const r = await fetch(`https://api.trakt.tv/movies/${slug}/related?limit=12`, { headers: TRAKT_HEADERS });
+  if (!r.ok) return [];
+  const related = await r.json();
+  if (!Array.isArray(related)) return [];
+  return related.filter((m: { ids?: { tmdb?: number } }) => m.ids?.tmdb).map((m: { ids: { tmdb: number } }) => ({ tmdbId: m.ids.tmdb }));
 }
 
 const PAGE_SIZE = 8;
@@ -44,14 +68,77 @@ export default function RecommendationsPage() {
           userMoviesRef.current = data as unknown as UserMovie[];
           alreadyAdded = new Set(data.map((r: { movie_id: number }) => r.movie_id));
         }
-        // Load saved watchlist IDs
         const { data: wl } = await supabase.from("watchlist").select("movie_id").eq("user_id", user.id);
         if (wl) setSavedIds(new Set(wl.map((r: { movie_id: number }) => r.movie_id)));
       }
 
+      // Get taste profile from server
       const res = await fetch("/api/recommendations");
-      const data = await res.json();
-      const recs: Rec[] = (data.recommendations ?? []).filter((r: Rec) => !alreadyAdded.has(r.movie.id));
+      const profile = await res.json();
+
+      if (profile.fallback) {
+        poolRef.current = profile.fallback;
+        setQueue(profile.fallback.slice(0, PAGE_SIZE));
+        setLoading(false);
+        return;
+      }
+
+      const { topMovies, rankedIds, genreFreq, directorFreq } = profile;
+      const rankedSet = new Set<number>(rankedIds);
+
+      // Fetch Trakt related from browser (no Cloudflare block)
+      const traktResults = await Promise.all(
+        topMovies.map((tm: { tmdbId: number }) => traktRelated(tm.tmdbId).catch(() => []))
+      );
+
+      // Collect unique candidate TMDB IDs with source tracking
+      const candidateMap = new Map<number, { tmdbId: number; sources: string[] }>();
+      traktResults.forEach((related: { tmdbId: number }[], i: number) => {
+        const sourceTitle = topMovies[i].title;
+        for (const r of related) {
+          if (rankedSet.has(r.tmdbId) || alreadyAdded.has(r.tmdbId)) continue;
+          if (candidateMap.has(r.tmdbId)) {
+            candidateMap.get(r.tmdbId)!.sources.push(sourceTitle);
+          } else {
+            candidateMap.set(r.tmdbId, { tmdbId: r.tmdbId, sources: [sourceTitle] });
+          }
+        }
+      });
+
+      // Sort by overlap, fetch TMDB details for top candidates
+      const sorted = Array.from(candidateMap.values()).sort((a, b) => b.sources.length - a.sources.length);
+      const top = sorted.slice(0, 50);
+      const details = await Promise.allSettled(top.map((c) => fetch(`https://api.themoviedb.org/3/movie/${c.tmdbId}?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY}&language=en-US`).then((r) => r.json())));
+
+      const recs: Rec[] = [];
+      details.forEach((result, i) => {
+        if (result.status !== "fulfilled") return;
+        const movie = result.value as TMDBMovieDetail;
+        if (!movie.id || (movie as { success?: boolean }).success === false) return;
+        const candidate = top[i];
+        let score = candidate.sources.length * 3;
+        const reasons: string[] = [];
+
+        const raw = movie as { genre_ids?: number[]; genres?: { name: string }[] };
+        const movieGenres: string[] = raw.genres?.map((g) => g.name) ?? (raw.genre_ids ?? []).map((id) => GENRE_ID_MAP[id]).filter(Boolean);
+        movieGenres.forEach((g) => {
+          if (genreFreq[g]) { score += genreFreq[g]; if (!reasons.includes(`You love ${g}`)) reasons.push(`You love ${g}`); }
+        });
+
+        const director = (movie as { director?: string }).director;
+        if (director && directorFreq[director]) { score += directorFreq[director]; reasons.push(`More from ${director}`); }
+
+        if (candidate.sources.length > 1) {
+          reasons.unshift(`${candidate.sources.length} of your top picks recommend this`);
+        } else if (candidate.sources.length === 1) {
+          reasons.unshift(`Because you liked "${candidate.sources[0]}"`);
+        }
+
+        score += Math.min((movie.vote_average ?? 0) / 10, 1);
+        recs.push({ movie, score, reasons: reasons.slice(0, 2) });
+      });
+
+      recs.sort((a, b) => b.score - a.score);
       poolRef.current = recs;
       setHiddenIds(alreadyAdded);
       setQueue(recs.slice(0, PAGE_SIZE));
@@ -75,10 +162,7 @@ export default function RecommendationsPage() {
     setSaving(movie.id);
     const detail = await getMovieDetail(movie.id);
     const m = tmdbMovieToMovie(detail);
-    await supabase.from("movies").upsert({
-      id: m.id, title: m.title, poster_path: m.poster_path,
-      year: m.year, genres: m.genres, overview: m.overview, director: m.director,
-    });
+    await supabase.from("movies").upsert({ id: m.id, title: m.title, poster_path: m.poster_path, year: m.year, genres: m.genres, overview: m.overview, director: m.director });
     await supabase.from("watchlist").upsert({ user_id: userId, movie_id: m.id });
     setSavedIds((prev) => new Set([...prev, movie.id]));
     setSaving(null);
@@ -89,10 +173,7 @@ export default function RecommendationsPage() {
     setAdding(movie.id);
     const detail = await getMovieDetail(movie.id);
     const m = tmdbMovieToMovie(detail);
-    await supabase.from("movies").upsert({
-      id: m.id, title: m.title, poster_path: m.poster_path,
-      year: m.year, genres: m.genres, overview: m.overview, director: m.director,
-    });
+    await supabase.from("movies").upsert({ id: m.id, title: m.title, poster_path: m.poster_path, year: m.year, genres: m.genres, overview: m.overview, director: m.director });
     setAdding(null);
     setStarPending({ movie, m: { id: m.id, title: m.title, poster_path: m.poster_path } });
   }
@@ -103,11 +184,7 @@ export default function RecommendationsPage() {
     setStarPending(null);
     const currentElos = userMoviesRef.current.map((um) => um.elo_score);
     const seedElo = starsToListElo(stars, currentElos);
-    const { data: inserted } = await supabase
-      .from("user_movies")
-      .insert({ user_id: userId, movie_id: m.id, elo_score: seedElo })
-      .select("id")
-      .single();
+    const { data: inserted } = await supabase.from("user_movies").insert({ user_id: userId, movie_id: m.id, elo_score: seedElo }).select("id").single();
 
     if (inserted) {
       const pool = userMoviesRef.current.map((um) => {
@@ -115,21 +192,16 @@ export default function RecommendationsPage() {
         return { umId: um.id, movieId: um.movie_id, title: mov?.title ?? "", posterPath: mov?.poster_path ?? null, eloScore: um.elo_score };
       });
       const BAND = 250;
-      let filteredPool = pool.filter((p) => Math.abs(p.eloScore - seedElo) <= BAND);
-      if (filteredPool.length < 3) filteredPool = pool.filter((p) => Math.abs(p.eloScore - seedElo) <= 500);
-      if (filteredPool.length < 2) filteredPool = pool;
-      setQuickRank({
-        newMovie: { umId: inserted.id, movieId: m.id, title: m.title, posterPath: m.poster_path ?? null, eloScore: seedElo },
-        pool: filteredPool,
-      });
+      let fp = pool.filter((p) => Math.abs(p.eloScore - seedElo) <= BAND);
+      if (fp.length < 3) fp = pool.filter((p) => Math.abs(p.eloScore - seedElo) <= 500);
+      if (fp.length < 2) fp = pool;
+      setQuickRank({ newMovie: { umId: inserted.id, movieId: m.id, title: m.title, posterPath: m.poster_path ?? null, eloScore: seedElo }, pool: fp });
     }
 
-    // Remove from watchlist if it was saved there
     if (savedIds.has(movie.id)) {
       await supabase.from("watchlist").delete().eq("user_id", userId).eq("movie_id", movie.id);
       setSavedIds((prev) => { const s = new Set(prev); s.delete(movie.id); return s; });
     }
-
     setJustAdded((prev) => new Set([...prev, movie.id]));
     setTimeout(() => hide(movie.id), 700);
   }
@@ -195,58 +267,37 @@ export default function RecommendationsPage() {
 
             return (
               <div key={movie.id} className="flex gap-4 bg-card border border-border rounded-2xl p-4 relative">
-                <button
-                  onClick={() => hide(movie.id)}
-                  className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition-colors p-1"
-                  aria-label="Not interested"
-                >
+                <button onClick={() => hide(movie.id)} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition-colors p-1" aria-label="Not interested">
                   <X size={16} />
                 </button>
-
                 <div className="relative w-20 h-28 rounded-xl overflow-hidden bg-muted poster-shadow flex-shrink-0">
-                  {url ? (
-                    <Image src={url} alt={movie.title} fill className="object-cover" sizes="80px" />
-                  ) : (
-                    <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground p-1 text-center">
-                      {movie.title}
-                    </div>
+                  {url ? <Image src={url} alt={movie.title} fill className="object-cover" sizes="80px" /> : (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground p-1 text-center">{movie.title}</div>
                   )}
                 </div>
-
                 <div className="flex-1 min-w-0 pr-6">
                   <p className="font-semibold leading-tight mb-1">{movie.title}</p>
                   <p className="text-xs text-muted-foreground mb-2">{year}{genres ? ` · ${genres}` : ""}</p>
-
                   {reasons.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mb-2">
                       {reasons.map((r) => (
-                        <span key={r} className="inline-block px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full">
-                          {r}
-                        </span>
+                        <span key={r} className="inline-block px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full">{r}</span>
                       ))}
                     </div>
                   )}
-
-                  {movie.overview && (
-                    <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{movie.overview}</p>
-                  )}
-
+                  {movie.overview && <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{movie.overview}</p>}
                   <div className="flex gap-2">
                     <button
                       onClick={() => addToList(movie)}
                       disabled={isAdded || isAdding}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium rounded-full transition-colors disabled:opacity-60"
                     >
-                      {isAdded ? <><Check size={12} /> Added!</> : isAdding ? "Adding…" : <><Plus size={12} /> Add to list</>}
+                      {isAdded ? <><Check size={12} /> Added!</> : isAdding ? <><Loader2 size={12} className="animate-spin" /> Adding…</> : <><Plus size={12} /> Add to list</>}
                     </button>
                     <button
                       onClick={() => saveToWatchlist(movie)}
                       disabled={isSaved || isSaving}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors disabled:opacity-60 ${
-                        isSaved
-                          ? "bg-amber-500/10 text-amber-500"
-                          : "bg-muted hover:bg-muted/80 text-muted-foreground"
-                      }`}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors disabled:opacity-60 ${isSaved ? "bg-amber-500/10 text-amber-500" : "bg-muted hover:bg-muted/80 text-muted-foreground"}`}
                     >
                       <Bookmark size={12} fill={isSaved ? "currentColor" : "none"} />
                       {isSaved ? "Saved" : isSaving ? "Saving…" : "Watchlist"}
