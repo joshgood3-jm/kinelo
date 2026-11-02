@@ -6,6 +6,7 @@ import type { TMDBMovieDetail } from "@/types";
 const TRAKT_KEY = process.env.TRAKT_API_KEY!;
 const TRAKT_HEADERS = {
   "Content-Type": "application/json",
+  "Accept": "application/json",
   "trakt-api-version": "2",
   "trakt-api-key": TRAKT_KEY,
 };
