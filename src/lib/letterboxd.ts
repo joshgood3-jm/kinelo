@@ -26,6 +26,8 @@ export interface LetterboxdFilm {
   title: string;
   year: number | null;
   rating: number | null; // 0.5–5
+  tmdbId: number | null;
+  isRewatch: boolean;
   letterboxdUri?: string;
 }
 
@@ -38,9 +40,10 @@ export function parseDiaryRss(xml: string): LetterboxdFilm[] {
       ?? "";
     const yearStr = item.match(/<letterboxd:filmYear>(\d+)<\/letterboxd:filmYear>/)?.[1];
     const ratingStr = item.match(/<letterboxd:memberRating>([\d.]+)<\/letterboxd:memberRating>/)?.[1];
+    const tmdbStr = item.match(/<tmdb:movieId>(\d+)<\/tmdb:movieId>/)?.[1];
     const uri = item.match(/<letterboxd:filmUri>([^<]+)<\/letterboxd:filmUri>/)?.[1];
+    const rewatchStr = item.match(/<letterboxd:rewatch>([^<]+)<\/letterboxd:rewatch>/)?.[1];
 
-    // Also try to get title from <title> if letterboxd:filmTitle is missing
     const fallbackTitle = item.match(/<title><!\[CDATA\[([^,\]]+)/)?.[1]?.trim()
       ?? item.match(/<title>([^,<]+)/)?.[1]?.trim()
       ?? "";
@@ -49,6 +52,8 @@ export function parseDiaryRss(xml: string): LetterboxdFilm[] {
       title: title || fallbackTitle,
       year: yearStr ? parseInt(yearStr) : null,
       rating: ratingStr ? parseFloat(ratingStr) : null,
+      tmdbId: tmdbStr ? parseInt(tmdbStr) : null,
+      isRewatch: rewatchStr === "Yes",
       letterboxdUri: uri,
     };
   }).filter((f) => f.title);
@@ -63,22 +68,23 @@ export function parseRatingsCsv(csv: string): LetterboxdFilm[] {
   const isRatingsFormat = header.includes("rating");
 
   return lines.slice(1).map((line) => {
-    // Handle quoted fields with commas inside
     const cols = parseCsvLine(line);
     if (isRatingsFormat) {
-      // Date,Name,Year,Letterboxd URI,Rating
       return {
         title: cols[1]?.trim() ?? "",
         year: cols[2] ? parseInt(cols[2]) : null,
         rating: cols[4] ? parseFloat(cols[4]) : null,
+        tmdbId: null,
+        isRewatch: false,
         letterboxdUri: cols[3]?.trim(),
       };
     }
-    // watched.csv: Date,Name,Year,Letterboxd URI
     return {
       title: cols[1]?.trim() ?? "",
       year: cols[2] ? parseInt(cols[2]) : null,
       rating: null,
+      tmdbId: null,
+      isRewatch: false,
       letterboxdUri: cols[3]?.trim(),
     };
   }).filter((f) => f.title);
