@@ -10,8 +10,13 @@ import StarRatingModal from "@/components/StarRatingModal";
 import LetterboxdImport from "@/components/LetterboxdImport";
 import QuickRankModal, { type QuickRankMovie } from "@/components/QuickRankModal";
 import Image from "next/image";
-import { Trash2, Plus, Check, Loader2 } from "lucide-react";
+import { Trash2, Plus, Check, Loader2, Bookmark, ChevronDown, ChevronUp } from "lucide-react";
 import type { TMDBMovie, UserMovie } from "@/types";
+
+interface WatchlistMovie {
+  movie_id: number;
+  movies: { title: string; poster_path: string | null; year: number };
+}
 
 interface CuratedMovie {
   id: number;
@@ -60,6 +65,9 @@ export default function MoviesPage() {
   const [genreBrowserOpen, setGenreBrowserOpen] = useState(false);
   const [personBrowser, setPersonBrowser] = useState<{ id: number; name: string; profile_path: string | null; known_for_department: string } | null>(null);
   const [starPending, setStarPending] = useState<{ id: number; title: string; posterPath: string | null } | null>(null);
+  const [watchlist, setWatchlist] = useState<WatchlistMovie[]>([]);
+  const [watchlistOpen, setWatchlistOpen] = useState(true);
+  const [movingFromWatchlist, setMovingFromWatchlist] = useState<number | null>(null);
 
   const [curated, setCurated] = useState<{ imdb: CuratedMovie[]; rollingStone: CuratedMovie[]; oscars: CuratedMovie[] } | null>(null);
   const [curatedAddingId, setCuratedAddingId] = useState<number | null>(null);
@@ -80,6 +88,12 @@ export default function MoviesPage() {
       .eq("user_id", user.id)
       .order("elo_score", { ascending: false });
     setUserMovies((data as unknown as UserMovie[]) ?? []);
+    const { data: wl } = await supabase
+      .from("watchlist")
+      .select("movie_id, movies(title, poster_path, year)")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+    setWatchlist((wl as unknown as WatchlistMovie[]) ?? []);
     setLoading(false);
   }, [supabase]);
 
@@ -141,6 +155,21 @@ export default function MoviesPage() {
     setStarPending(null);
     const currentElos = userMovies.map((um) => um.elo_score);
     await insertAndRank(id, title, posterPath, userMovies, starsToListElo(stars, currentElos));
+  }
+
+  async function removeFromWatchlist(movieId: number) {
+    if (!userId) return;
+    await supabase.from("watchlist").delete().eq("user_id", userId).eq("movie_id", movieId);
+    setWatchlist((prev) => prev.filter((w) => w.movie_id !== movieId));
+  }
+
+  async function moveWatchlistToList(wm: WatchlistMovie) {
+    if (!userId) return;
+    setMovingFromWatchlist(wm.movie_id);
+    setStarPending({ id: wm.movie_id, title: wm.movies.title, posterPath: wm.movies.poster_path });
+    await supabase.from("watchlist").delete().eq("user_id", userId).eq("movie_id", wm.movie_id);
+    setWatchlist((prev) => prev.filter((w) => w.movie_id !== wm.movie_id));
+    setMovingFromWatchlist(null);
   }
 
   async function removeMovie(umId: string) {
@@ -224,6 +253,56 @@ export default function MoviesPage() {
       {tab === "mine" && (
         <div className="px-4 pb-24 space-y-3">
           <MovieSearch onAdd={addMovie} existingIds={existingIds} onGenreBrowse={() => setGenreBrowserOpen(true)} onPersonBrowse={(p) => setPersonBrowser(p)} />
+          {/* Watchlist section */}
+          {watchlist.length > 0 && (
+            <div className="mb-2">
+              <button
+                onClick={() => setWatchlistOpen((o) => !o)}
+                className="flex items-center gap-2 w-full text-left py-2"
+              >
+                <Bookmark size={14} className="text-amber-500" fill="currentColor" />
+                <span className="text-sm font-semibold">Watchlist</span>
+                <span className="text-xs text-muted-foreground ml-1">{watchlist.length}</span>
+                <span className="ml-auto text-muted-foreground">
+                  {watchlistOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </span>
+              </button>
+              {watchlistOpen && (
+                <div className="space-y-2">
+                  {watchlist.map((wm) => {
+                    const url = posterUrl(wm.movies?.poster_path, "w185");
+                    const isMoving = movingFromWatchlist === wm.movie_id;
+                    return (
+                      <div key={wm.movie_id} className="flex items-center gap-3 bg-card border border-border rounded-xl p-3">
+                        <Bookmark size={14} className="text-amber-500 flex-shrink-0" fill="currentColor" />
+                        <div className="relative w-10 h-14 rounded-lg overflow-hidden bg-muted flex-shrink-0">
+                          {url && <Image src={url} alt={wm.movies?.title ?? ""} fill className="object-cover" sizes="40px" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{wm.movies?.title}</p>
+                          <p className="text-xs text-muted-foreground">{wm.movies?.year}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => moveWatchlistToList(wm)}
+                            disabled={isMoving}
+                            className="text-xs px-2.5 py-1 bg-primary/10 text-primary rounded-full font-medium hover:bg-primary/20 transition-colors"
+                          >
+                            {isMoving ? <Loader2 size={10} className="animate-spin" /> : "Add to list"}
+                          </button>
+                          <button onClick={() => removeFromWatchlist(wm.movie_id)} className="text-muted-foreground hover:text-red-400 transition-colors">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="border-t border-border mt-3 mb-1" />
+            </div>
+          )}
+
           {userMovies.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <p className="text-4xl mb-4">🎬</p>

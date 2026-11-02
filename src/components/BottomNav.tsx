@@ -10,7 +10,7 @@ const nav = [
   { href: "/rank", icon: Swords, label: "Rank" },
   { href: "/movies", icon: Film, label: "My List" },
   { href: "/friends", icon: Users, label: "Friends" },
-  { href: "/recommendations", icon: Sparkles, label: "For You" },
+  { href: "/recommendations", icon: Sparkles, label: "Next Watch" },
 ];
 
 export default function BottomNav() {

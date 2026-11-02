@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 import { posterUrl } from "@/lib/tmdb";
 import Image from "next/image";
-import { Sparkles, Plus, Check, X } from "lucide-react";
+import { Sparkles, Plus, Check, X, Bookmark } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMovieDetail, tmdbMovieToMovie } from "@/lib/tmdb";
 import { starsToListElo } from "@/lib/elo";
@@ -19,15 +19,14 @@ interface Rec {
 const PAGE_SIZE = 8;
 
 export default function RecommendationsPage() {
-  // pool: all recs from API, never mutated after load
   const poolRef = useRef<Rec[]>([]);
-  // hiddenIds: movies removed (added or dismissed) — drives what's visible
   const [hiddenIds, setHiddenIds] = useState<Set<number>>(new Set());
-  // visible: the ordered queue of cards to show (superset; we filter out hiddenIds on render)
   const [queue, setQueue] = useState<Rec[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState<number | null>(null);
+  const [saving, setSaving] = useState<number | null>(null);
   const [justAdded, setJustAdded] = useState<Set<number>>(new Set());
+  const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
   const [userId, setUserId] = useState<string | null>(null);
   const [quickRank, setQuickRank] = useState<{ newMovie: QuickRankMovie; pool: QuickRankMovie[] } | null>(null);
   const [starPending, setStarPending] = useState<{ movie: TMDBMovieDetail; m: { id: number; title: string; poster_path: string | null } } | null>(null);
@@ -45,31 +44,44 @@ export default function RecommendationsPage() {
           userMoviesRef.current = data as unknown as UserMovie[];
           alreadyAdded = new Set(data.map((r: { movie_id: number }) => r.movie_id));
         }
+        // Load saved watchlist IDs
+        const { data: wl } = await supabase.from("watchlist").select("movie_id").eq("user_id", user.id);
+        if (wl) setSavedIds(new Set(wl.map((r: { movie_id: number }) => r.movie_id)));
       }
 
       const res = await fetch("/api/recommendations");
       const data = await res.json();
       const recs: Rec[] = (data.recommendations ?? []).filter((r: Rec) => !alreadyAdded.has(r.movie.id));
       poolRef.current = recs;
-
-      // pre-hide already-added movies
       setHiddenIds(alreadyAdded);
       setQueue(recs.slice(0, PAGE_SIZE));
       setLoading(false);
     })();
   }, [supabase]);
 
-  // Visible = queue cards that haven't been hidden yet
   const visible = queue.filter((r) => !hiddenIds.has(r.movie.id));
 
   function hide(movieId: number) {
     setHiddenIds((prev) => new Set([...prev, movieId]));
-    // Top up queue from pool when we drop a card
     setQueue((prev) => {
       const shownIds = new Set(prev.map((r) => r.movie.id));
       const next = poolRef.current.find((r) => !shownIds.has(r.movie.id) && !hiddenIds.has(r.movie.id) && r.movie.id !== movieId);
       return next ? [...prev, next] : prev;
     });
+  }
+
+  async function saveToWatchlist(movie: TMDBMovieDetail) {
+    if (!userId || savedIds.has(movie.id)) return;
+    setSaving(movie.id);
+    const detail = await getMovieDetail(movie.id);
+    const m = tmdbMovieToMovie(detail);
+    await supabase.from("movies").upsert({
+      id: m.id, title: m.title, poster_path: m.poster_path,
+      year: m.year, genres: m.genres, overview: m.overview, director: m.director,
+    });
+    await supabase.from("watchlist").upsert({ user_id: userId, movie_id: m.id });
+    setSavedIds((prev) => new Set([...prev, movie.id]));
+    setSaving(null);
   }
 
   async function addToList(movie: TMDBMovieDetail) {
@@ -112,6 +124,12 @@ export default function RecommendationsPage() {
       });
     }
 
+    // Remove from watchlist if it was saved there
+    if (savedIds.has(movie.id)) {
+      await supabase.from("watchlist").delete().eq("user_id", userId).eq("movie_id", movie.id);
+      setSavedIds((prev) => { const s = new Set(prev); s.delete(movie.id); return s; });
+    }
+
     setJustAdded((prev) => new Set([...prev, movie.id]));
     setTimeout(() => hide(movie.id), 700);
   }
@@ -120,7 +138,7 @@ export default function RecommendationsPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-3">
         <Sparkles size={32} className="text-primary animate-pulse" />
-        <p className="text-muted-foreground">Finding movies for you…</p>
+        <p className="text-muted-foreground">Finding your next watch…</p>
       </div>
     );
   }
@@ -154,7 +172,7 @@ export default function RecommendationsPage() {
       <div>
         <div className="flex items-center gap-2 mb-1">
           <Sparkles size={20} className="text-primary" />
-          <h1 className="text-2xl font-bold">For You</h1>
+          <h1 className="text-2xl font-bold">Your Next Watch</h1>
         </div>
         <p className="text-muted-foreground text-sm">Picks based on your rankings</p>
       </div>
@@ -170,6 +188,8 @@ export default function RecommendationsPage() {
             const url = posterUrl(movie.poster_path, "w342");
             const isAdding = adding === movie.id;
             const isAdded = justAdded.has(movie.id);
+            const isSaving = saving === movie.id;
+            const isSaved = savedIds.has(movie.id);
             const year = movie.release_date?.slice(0, 4);
             const genres = movie.genres?.map((g: { name: string }) => g.name).slice(0, 2).join(", ") ?? "";
 
@@ -211,19 +231,27 @@ export default function RecommendationsPage() {
                     <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{movie.overview}</p>
                   )}
 
-                  <button
-                    onClick={() => addToList(movie)}
-                    disabled={isAdded || isAdding}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium rounded-full transition-colors disabled:opacity-60"
-                  >
-                    {isAdded ? (
-                      <><Check size={12} /> Added!</>
-                    ) : isAdding ? (
-                      "Adding…"
-                    ) : (
-                      <><Plus size={12} /> Add to list</>
-                    )}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => addToList(movie)}
+                      disabled={isAdded || isAdding}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium rounded-full transition-colors disabled:opacity-60"
+                    >
+                      {isAdded ? <><Check size={12} /> Added!</> : isAdding ? "Adding…" : <><Plus size={12} /> Add to list</>}
+                    </button>
+                    <button
+                      onClick={() => saveToWatchlist(movie)}
+                      disabled={isSaved || isSaving}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors disabled:opacity-60 ${
+                        isSaved
+                          ? "bg-amber-500/10 text-amber-500"
+                          : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                      }`}
+                    >
+                      <Bookmark size={12} fill={isSaved ? "currentColor" : "none"} />
+                      {isSaved ? "Saved" : isSaving ? "Saving…" : "Watchlist"}
+                    </button>
+                  </div>
                 </div>
               </div>
             );
