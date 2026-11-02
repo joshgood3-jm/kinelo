@@ -9,12 +9,24 @@ interface Props {
 }
 
 const LABELS: Record<number, string> = {
-  1: "Not for me",
-  2: "It's okay",
-  3: "Pretty good",
-  4: "Really liked it",
-  5: "One of my favorites",
+  0.5: "Hard pass",
+  1:   "Not for me",
+  1.5: "Mostly bad",
+  2:   "It's okay",
+  2.5: "Decent",
+  3:   "Liked it",
+  3.5: "Quite good",
+  4:   "Really liked it",
+  4.5: "Nearly perfect",
+  5:   "All-time favorite",
 };
+
+// How much of star N (1-based) to fill given a rating
+function fillWidth(starIndex: number, rating: number): string {
+  if (rating >= starIndex) return "100%";
+  if (rating >= starIndex - 0.5) return "50%";
+  return "0%";
+}
 
 export default function StarRatingModal({ movie, onConfirm }: Props) {
   const [hovered, setHovered] = useState(0);
@@ -38,24 +50,41 @@ export default function StarRatingModal({ movie, onConfirm }: Props) {
           <p className="text-sm text-muted-foreground mt-1">How good is it?</p>
         </div>
 
-        {/* Stars */}
-        <div className="flex gap-4">
+        {/* Half-star picker */}
+        <div
+          className="flex gap-1"
+          onMouseLeave={() => setHovered(0)}
+        >
           {[1, 2, 3, 4, 5].map((star) => (
-            <button
-              key={star}
-              onMouseEnter={() => setHovered(star)}
-              onMouseLeave={() => setHovered(0)}
-              onClick={() => setSelected(star)}
-              className={`text-5xl leading-none transition-all duration-100 select-none ${
-                star <= display ? "text-amber-400 scale-110" : "text-muted-foreground/30 scale-100"
-              }`}
-            >
-              ★
-            </button>
+            <div key={star} className="relative text-5xl leading-none select-none w-10 h-10 flex items-center justify-center">
+              {/* Empty star base */}
+              <span className="text-muted-foreground/25">★</span>
+              {/* Filled overlay clipped to fill width */}
+              <span
+                className="absolute inset-0 overflow-hidden text-amber-400 flex items-center justify-center pointer-events-none"
+                style={{ width: fillWidth(star, display) }}
+              >
+                ★
+              </span>
+              {/* Left half — 0.5 increment */}
+              <button
+                className="absolute inset-y-0 left-0 w-1/2"
+                onMouseEnter={() => setHovered(star - 0.5)}
+                onClick={() => setSelected(star - 0.5)}
+                aria-label={`${star - 0.5} stars`}
+              />
+              {/* Right half — whole star */}
+              <button
+                className="absolute inset-y-0 right-0 w-1/2"
+                onMouseEnter={() => setHovered(star)}
+                onClick={() => setSelected(star)}
+                aria-label={`${star} stars`}
+              />
+            </div>
           ))}
         </div>
 
-        <p className="text-sm text-muted-foreground h-5 transition-opacity">
+        <p className="text-sm text-muted-foreground h-5">
           {display > 0 ? LABELS[display] : ""}
         </p>
       </div>

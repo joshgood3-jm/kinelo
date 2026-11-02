@@ -1,10 +1,10 @@
 const INITIAL_ELO = 1000;
 const K_FACTOR = 32;
 
-// Map whole stars (1–5) to a seeded ELO. 3★ = 1000 (average), spread ±250.
+// Map half-star rating (0.5–5) to a seeded ELO. 3★ = 1000, ±250 per whole star.
+// Aligned with ratingToElo in letterboxd.ts so imports and manual ratings share the same scale.
 export function starsToElo(stars: number): number {
-  const map: Record<number, number> = { 1: 500, 2: 750, 3: 1000, 4: 1250, 5: 1500 };
-  return map[stars] ?? INITIAL_ELO;
+  return Math.round(1000 + (stars - 3) * 250);
 }
 
 export function expectedScore(ratingA: number, ratingB: number): number {

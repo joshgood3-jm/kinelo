@@ -10,7 +10,6 @@ import StarRatingModal from "@/components/StarRatingModal";
 import LetterboxdImport from "@/components/LetterboxdImport";
 import QuickRankModal, { type QuickRankMovie } from "@/components/QuickRankModal";
 import Image from "next/image";
-import { starsDisplay } from "@/lib/letterboxd";
 import { Trash2, Plus, Check, Loader2 } from "lucide-react";
 import type { TMDBMovie, UserMovie } from "@/types";
 
@@ -245,9 +244,6 @@ export default function MoviesPage() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{movie?.title}</p>
                       <p className="text-xs text-muted-foreground">{movie?.year}{movie?.genres?.[0] ? ` · ${movie.genres[0]}` : ""}</p>
-                      {um.letterboxd_rating != null && (
-                        <p className="text-xs text-amber-400 mt-0.5">{starsDisplay(um.letterboxd_rating)}</p>
-                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-mono text-muted-foreground">{um.elo_score}</span>
