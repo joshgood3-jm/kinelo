@@ -52,7 +52,7 @@ export default function RecommendationsPage() {
   const [justAdded, setJustAdded] = useState<Set<number>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
   const [userId, setUserId] = useState<string | null>(null);
-  const [quickRank, setQuickRank] = useState<{ newMovie: QuickRankMovie; pool: QuickRankMovie[] } | null>(null);
+  const [quickRank, setQuickRank] = useState<{ newMovie: QuickRankMovie; pool: QuickRankMovie[]; fullPool: QuickRankMovie[] } | null>(null);
   const [starPending, setStarPending] = useState<{ movie: TMDBMovieDetail; m: { id: number; title: string; poster_path: string | null } } | null>(null);
   const userMoviesRef = useRef<UserMovie[]>([]);
   const supabase = createClient();
@@ -192,7 +192,7 @@ export default function RecommendationsPage() {
         const mov = (um as unknown as { movies: { title: string; poster_path: string | null } }).movies;
         return { umId: um.id, movieId: um.movie_id, title: mov?.title ?? "", posterPath: mov?.poster_path ?? null, eloScore: um.elo_score };
       });
-      setQuickRank({ newMovie: { umId: inserted.id, movieId: m.id, title: m.title, posterPath: m.poster_path ?? null, eloScore: seedElo }, pool: neighborhoodPool(allPool, seedElo) });
+      setQuickRank({ newMovie: { umId: inserted.id, movieId: m.id, title: m.title, posterPath: m.poster_path ?? null, eloScore: seedElo }, pool: neighborhoodPool(allPool, seedElo), fullPool: allPool });
     }
 
     if (savedIds.has(movie.id)) {
@@ -234,6 +234,7 @@ export default function RecommendationsPage() {
         userId={userId}
         newMovie={quickRank.newMovie}
         pool={quickRank.pool}
+        fullPool={quickRank.fullPool}
         onDone={() => { setQuickRank(null); }}
       />
     )}

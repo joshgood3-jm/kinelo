@@ -17,7 +17,8 @@ export interface QuickRankMovie {
 interface Props {
   userId: string;
   newMovie: QuickRankMovie;
-  pool: QuickRankMovie[]; // sorted by elo desc
+  pool: QuickRankMovie[]; // neighborhood pool for comparisons
+  fullPool?: QuickRankMovie[]; // full list for rank calculation
   onDone: () => void;
   onClose?: () => void; // dismiss without navigating away
 }
@@ -38,7 +39,7 @@ function pickOpponents(pool: QuickRankMovie[], count: number): QuickRankMovie[] 
   });
 }
 
-export default function QuickRankModal({ userId, newMovie, pool, onDone, onClose }: Props) {
+export default function QuickRankModal({ userId, newMovie, pool, fullPool, onDone, onClose }: Props) {
   const supabase = createClient();
 
   const maxComps = Math.min(MAX_COMPARISONS, pool.length);
@@ -77,8 +78,8 @@ export default function QuickRankModal({ userId, newMovie, pool, onDone, onClose
     const nextCount = compCount + 1;
 
     if (nextCount >= maxComps) {
-      const sorted = [...pool].sort((a, b) => b.eloScore - a.eloScore);
-      const rank = sorted.filter((m) => m.eloScore > newNewMovieElo).length + 1;
+      const rankSource = fullPool ?? pool;
+      const rank = rankSource.filter((m) => m.eloScore > newNewMovieElo).length + 1;
       setFinalRank(rank);
       setDone(true);
     } else {

@@ -61,7 +61,7 @@ export default function MoviesPage() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
-  const [quickRank, setQuickRank] = useState<{ newMovie: QuickRankMovie; pool: QuickRankMovie[] } | null>(null);
+  const [quickRank, setQuickRank] = useState<{ newMovie: QuickRankMovie; pool: QuickRankMovie[]; fullPool: QuickRankMovie[] } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ umId: string; title: string } | null>(null);
   const [genreBrowserOpen, setGenreBrowserOpen] = useState(false);
   const [personBrowser, setPersonBrowser] = useState<{ id: number; name: string; profile_path: string | null; known_for_department: string } | null>(null);
@@ -124,6 +124,7 @@ export default function MoviesPage() {
     setQuickRank({
       newMovie: { umId: inserted.id, movieId, title, posterPath, eloScore: seedElo },
       pool,
+      fullPool: allPool,
     });
   }
 
@@ -432,6 +433,7 @@ export default function MoviesPage() {
         userId={userId}
         newMovie={quickRank.newMovie}
         pool={quickRank.pool}
+        fullPool={quickRank.fullPool}
         onDone={handleQuickRankDone}
         onClose={handleQuickRankClose}
       />
