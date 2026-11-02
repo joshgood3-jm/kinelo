@@ -166,6 +166,7 @@ export default function RecommendationsPage() {
     await supabase.from("watchlist").upsert({ user_id: userId, movie_id: m.id });
     setSavedIds((prev) => new Set([...prev, movie.id]));
     setSaving(null);
+    setTimeout(() => hide(movie.id), 600);
   }
 
   async function addToList(movie: TMDBMovieDetail) {
