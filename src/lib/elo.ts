@@ -24,6 +24,22 @@ export function starsToListElo(stars: number, currentElos: number[]): number {
   return percentileElo(starsToPercentile(stars), currentElos);
 }
 
+// Returns a pool of movies positionally close to seedElo in the ranked list.
+// Position-based (not ELO-distance) so it stays tight even on compressed distributions.
+export function neighborhoodPool<T extends { eloScore: number }>(
+  pool: T[],
+  seedElo: number,
+  halfWidth = 20
+): T[] {
+  if (pool.length === 0) return [];
+  const sorted = [...pool].sort((a, b) => b.eloScore - a.eloScore);
+  const pos = sorted.findIndex((m) => m.eloScore <= seedElo);
+  const center = pos === -1 ? sorted.length : pos;
+  const start = Math.max(0, center - halfWidth);
+  const end = Math.min(sorted.length, center + halfWidth);
+  return sorted.slice(start, end);
+}
+
 export function expectedScore(ratingA: number, ratingB: number): number {
   return 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
 }

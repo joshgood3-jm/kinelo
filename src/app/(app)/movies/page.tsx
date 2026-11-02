@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getMovieDetail, tmdbMovieToMovie, posterUrl } from "@/lib/tmdb";
-import { starsToListElo } from "@/lib/elo";
+import { starsToListElo, neighborhoodPool } from "@/lib/elo";
 import MovieSearch from "@/components/MovieSearch";
 import GenreBrowserModal from "@/components/GenreBrowserModal";
 import PersonBrowserModal from "@/components/PersonBrowserModal";
@@ -120,11 +120,7 @@ export default function MoviesPage() {
 
     if (!inserted) return;
     const allPool = currentPool.map(toQuickRankMovie);
-    // Compare only against movies with similar ELO — widen band if pool is thin
-    const BAND = 250;
-    let pool = allPool.filter((m) => Math.abs(m.eloScore - seedElo) <= BAND);
-    if (pool.length < 3) pool = allPool.filter((m) => Math.abs(m.eloScore - seedElo) <= 500);
-    if (pool.length < 2) pool = allPool;
+    const pool = neighborhoodPool(allPool, seedElo);
     setQuickRank({
       newMovie: { umId: inserted.id, movieId, title, posterPath, eloScore: seedElo },
       pool,

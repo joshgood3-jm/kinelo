@@ -4,7 +4,7 @@ import { posterUrl, getMovieDetail, tmdbMovieToMovie } from "@/lib/tmdb";
 import Image from "next/image";
 import { Sparkles, Plus, Check, X, Bookmark, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { starsToListElo } from "@/lib/elo";
+import { starsToListElo, neighborhoodPool } from "@/lib/elo";
 import QuickRankModal, { type QuickRankMovie } from "@/components/QuickRankModal";
 import StarRatingModal from "@/components/StarRatingModal";
 import type { TMDBMovieDetail, UserMovie } from "@/types";
@@ -188,15 +188,11 @@ export default function RecommendationsPage() {
     const { data: inserted } = await supabase.from("user_movies").insert({ user_id: userId, movie_id: m.id, elo_score: seedElo }).select("id").single();
 
     if (inserted) {
-      const pool = userMoviesRef.current.map((um) => {
+      const allPool = userMoviesRef.current.map((um) => {
         const mov = (um as unknown as { movies: { title: string; poster_path: string | null } }).movies;
         return { umId: um.id, movieId: um.movie_id, title: mov?.title ?? "", posterPath: mov?.poster_path ?? null, eloScore: um.elo_score };
       });
-      const BAND = 250;
-      let fp = pool.filter((p) => Math.abs(p.eloScore - seedElo) <= BAND);
-      if (fp.length < 3) fp = pool.filter((p) => Math.abs(p.eloScore - seedElo) <= 500);
-      if (fp.length < 2) fp = pool;
-      setQuickRank({ newMovie: { umId: inserted.id, movieId: m.id, title: m.title, posterPath: m.poster_path ?? null, eloScore: seedElo }, pool: fp });
+      setQuickRank({ newMovie: { umId: inserted.id, movieId: m.id, title: m.title, posterPath: m.poster_path ?? null, eloScore: seedElo }, pool: neighborhoodPool(allPool, seedElo) });
     }
 
     if (savedIds.has(movie.id)) {
