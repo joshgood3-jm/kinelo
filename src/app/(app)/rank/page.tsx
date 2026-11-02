@@ -3,7 +3,6 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { newRatings } from "@/lib/elo";
 import { posterUrl } from "@/lib/tmdb";
-import { starsDisplay } from "@/lib/letterboxd";
 import Image from "next/image";
 import Link from "next/link";
 import { Trophy, SkipForward } from "lucide-react";
@@ -15,7 +14,6 @@ interface RankableMovie {
   title: string;
   poster_path: string | null;
   year: number;
-  letterboxd_rating: number | null;
 }
 
 type SessionResult = { winner: RankableMovie; loser: RankableMovie; count: number } | null;
@@ -35,7 +33,7 @@ export default function RankPage() {
     if (!user) return;
     const { data } = await supabase
       .from("user_movies")
-      .select("id, movie_id, elo_score, letterboxd_rating, movies(title, poster_path, year)")
+      .select("id, movie_id, elo_score, movies(title, poster_path, year)")
       .eq("user_id", user.id);
 
     if (!data) return;
@@ -44,7 +42,6 @@ export default function RankPage() {
       id: um.id,
       movie_id: um.movie_id,
       elo_score: um.elo_score,
-      letterboxd_rating: (um.letterboxd_rating as unknown as number | null) ?? null,
       title: (um.movies as unknown as MovieRow).title,
       poster_path: (um.movies as unknown as MovieRow).poster_path,
       year: (um.movies as unknown as MovieRow).year,
@@ -157,9 +154,6 @@ export default function RankPage() {
               <div className="text-center">
                 <p className="font-semibold text-sm leading-tight line-clamp-2">{movie.title}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{movie.year}</p>
-                {movie.letterboxd_rating != null && (
-                  <p className="text-sm text-amber-400 mt-1 tracking-wide">{starsDisplay(movie.letterboxd_rating)}</p>
-                )}
               </div>
             </button>
           ))}
