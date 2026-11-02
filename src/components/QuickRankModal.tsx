@@ -1,10 +1,49 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Image from "next/image";
 import { posterUrl } from "@/lib/tmdb";
 import { newRatings } from "@/lib/elo";
 import { createClient } from "@/lib/supabase/client";
 import { CheckCircle, X } from "lucide-react";
+
+const CONFETTI_COLORS = ["#FF6B6B", "#4ECDC4", "#FFE66D", "#A8E6CF", "#FF8B94", "#C7B8EA", "#FFA07A", "#98D8C8"];
+
+function ConfettiPiece({ left, delay, color, size, round }: { left: string; delay: string; color: string; size: string; round: boolean }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left,
+        top: "-12px",
+        width: size,
+        height: size,
+        backgroundColor: color,
+        borderRadius: round ? "50%" : "2px",
+        animation: `confettiFall 2.2s ${delay} cubic-bezier(.4,0,.6,1) forwards`,
+        transform: `rotate(${Math.random() * 360}deg)`,
+      }}
+    />
+  );
+}
+
+function Confetti() {
+  const pieces = useRef(
+    Array.from({ length: 40 }, (_, i) => ({
+      id: i,
+      left: `${(i / 40) * 100 + (Math.random() * 2.5 - 1.25)}%`,
+      delay: `${(Math.random() * 0.6).toFixed(2)}s`,
+      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      size: `${6 + Math.random() * 7}px`,
+      round: Math.random() > 0.5,
+    }))
+  );
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      <style>{`@keyframes confettiFall { 0%{transform:translateY(0) rotate(0deg);opacity:1} 100%{transform:translateY(100vh) rotate(720deg);opacity:0} }`}</style>
+      {pieces.current.map((p) => <ConfettiPiece key={p.id} {...p} />)}
+    </div>
+  );
+}
 
 export interface QuickRankMovie {
   umId: string;
@@ -49,6 +88,7 @@ export default function QuickRankModal({ userId, newMovie, pool, fullPool, onDon
   const [done, setDone] = useState(pool.length === 0);
   const [choosing, setChoosing] = useState(false);
   const [finalRank, setFinalRank] = useState<number | null>(null);
+  const [topSpot, setTopSpot] = useState(false);
 
   const opponent = opponents[compCount];
   const progress = maxComps > 0 ? compCount / maxComps : 1;
@@ -75,6 +115,15 @@ export default function QuickRankModal({ userId, newMovie, pool, fullPool, onDon
     ]);
 
     setCurrentElo(newNewMovieElo);
+
+    // Check if new movie just claimed #1 across the full list
+    const rankSource = fullPool ?? pool;
+    const isTopNow = rankSource.every((m) => m.eloScore <= newNewMovieElo);
+    if (isTopNow && newMovieWon && !topSpot) {
+      setTopSpot(true);
+      setTimeout(() => setTopSpot(false), 3000);
+    }
+
     const nextCount = compCount + 1;
 
     if (nextCount >= maxComps) {
@@ -90,6 +139,16 @@ export default function QuickRankModal({ userId, newMovie, pool, fullPool, onDon
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background/95 backdrop-blur-sm">
+      {topSpot && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+          <Confetti />
+          <div className="relative z-20 bg-card border border-border rounded-3xl px-8 py-6 text-center shadow-2xl mx-6">
+            <p className="text-4xl mb-2">🏆</p>
+            <p className="text-xl font-bold">New #1!</p>
+            <p className="text-muted-foreground text-sm mt-1">"{newMovie.title}" is your top-ranked film</p>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="relative px-4 pt-10 pb-4 text-center">
         <button
