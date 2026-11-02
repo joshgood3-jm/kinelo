@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getMovieDetail, tmdbMovieToMovie, posterUrl } from "@/lib/tmdb";
-import { starsToElo } from "@/lib/elo";
+import { starsToListElo } from "@/lib/elo";
 import MovieSearch from "@/components/MovieSearch";
 import GenreBrowserModal from "@/components/GenreBrowserModal";
 import PersonBrowserModal from "@/components/PersonBrowserModal";
@@ -139,7 +139,8 @@ export default function MoviesPage() {
     if (!starPending) return;
     const { id, title, posterPath } = starPending;
     setStarPending(null);
-    await insertAndRank(id, title, posterPath, userMovies, starsToElo(stars));
+    const currentElos = userMovies.map((um) => um.elo_score);
+    await insertAndRank(id, title, posterPath, userMovies, starsToListElo(stars, currentElos));
   }
 
   async function removeMovie(umId: string) {

@@ -1,10 +1,27 @@
 const INITIAL_ELO = 1000;
 const K_FACTOR = 32;
 
-// Map half-star rating (0.5–5) to a seeded ELO. 3★ = 1000, ±250 per whole star.
-// Aligned with ratingToElo in letterboxd.ts so imports and manual ratings share the same scale.
-export function starsToElo(stars: number): number {
-  return Math.round(1000 + (stars - 3) * 250);
+// Map half-star rating (0.5–5) to a percentile of the user's current list.
+// 1★ = 10th, 3★ = 50th, 5★ = 90th — linear between those anchors.
+export function starsToPercentile(stars: number): number {
+  return Math.max(0.02, Math.min(0.98, (stars * 2 - 1) / 10));
+}
+
+// Interpolate an ELO from a list of ELO scores at the given percentile.
+export function percentileElo(percentile: number, elos: number[]): number {
+  if (elos.length === 0) return INITIAL_ELO;
+  const sorted = [...elos].sort((a, b) => a - b);
+  const idx = percentile * (sorted.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.min(Math.ceil(idx), sorted.length - 1);
+  if (lo === hi) return sorted[lo];
+  return Math.round(sorted[lo] + (idx - lo) * (sorted[hi] - sorted[lo]));
+}
+
+// Star rating → ELO anchored to the user's actual list distribution.
+// Falls back to INITIAL_ELO for new users with no movies yet.
+export function starsToListElo(stars: number, currentElos: number[]): number {
+  return percentileElo(starsToPercentile(stars), currentElos);
 }
 
 export function expectedScore(ratingA: number, ratingB: number): number {
