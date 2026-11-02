@@ -69,7 +69,9 @@ export default function RecommendationsPage() {
           alreadyAdded = new Set(data.map((r: { movie_id: number }) => r.movie_id));
         }
         const { data: wl } = await supabase.from("watchlist").select("movie_id").eq("user_id", user.id);
-        if (wl) setSavedIds(new Set(wl.map((r: { movie_id: number }) => r.movie_id)));
+        const watchlistIds = new Set<number>(wl?.map((r: { movie_id: number }) => r.movie_id) ?? []);
+        if (watchlistIds.size > 0) setSavedIds(watchlistIds);
+        for (const id of watchlistIds) alreadyAdded.add(id);
       }
 
       // Get taste profile from server
