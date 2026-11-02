@@ -2,10 +2,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getMovieDetail, tmdbMovieToMovie, posterUrl } from "@/lib/tmdb";
-import { INITIAL_ELO } from "@/lib/elo";
+import { starsToElo } from "@/lib/elo";
 import MovieSearch from "@/components/MovieSearch";
 import GenreBrowserModal from "@/components/GenreBrowserModal";
 import PersonBrowserModal from "@/components/PersonBrowserModal";
+import StarRatingModal from "@/components/StarRatingModal";
 import LetterboxdImport from "@/components/LetterboxdImport";
 import QuickRankModal, { type QuickRankMovie } from "@/components/QuickRankModal";
 import Image from "next/image";
@@ -59,6 +60,7 @@ export default function MoviesPage() {
   const [confirmDelete, setConfirmDelete] = useState<{ umId: string; title: string } | null>(null);
   const [genreBrowserOpen, setGenreBrowserOpen] = useState(false);
   const [personBrowser, setPersonBrowser] = useState<{ id: number; name: string; profile_path: string | null; known_for_department: string } | null>(null);
+  const [starPending, setStarPending] = useState<{ id: number; title: string; posterPath: string | null } | null>(null);
 
   const [curated, setCurated] = useState<{ imdb: CuratedMovie[]; rollingStone: CuratedMovie[]; oscars: CuratedMovie[] } | null>(null);
   const [curatedAddingId, setCuratedAddingId] = useState<number | null>(null);
@@ -87,23 +89,29 @@ export default function MoviesPage() {
     fetch("/api/curated").then((r) => r.json()).then(setCurated).catch(() => {});
   }, []);
 
-  // Shared: insert movie + open quick rank modal
-  async function insertAndRank(movieId: number, title: string, posterPath: string | null, currentPool: UserMovie[]) {
+  // Insert movie into user list with seeded ELO, then open quick rank against similar-rated movies
+  async function insertAndRank(movieId: number, title: string, posterPath: string | null, currentPool: UserMovie[], seedElo: number) {
     if (!userId) return;
     const { data: inserted } = await supabase
       .from("user_movies")
-      .insert({ user_id: userId, movie_id: movieId, elo_score: INITIAL_ELO })
+      .insert({ user_id: userId, movie_id: movieId, elo_score: seedElo })
       .select("id")
       .single();
 
     if (!inserted) return;
-    const pool = currentPool.map(toQuickRankMovie);
+    const allPool = currentPool.map(toQuickRankMovie);
+    // Compare only against movies with similar ELO — widen band if pool is thin
+    const BAND = 250;
+    let pool = allPool.filter((m) => Math.abs(m.eloScore - seedElo) <= BAND);
+    if (pool.length < 3) pool = allPool.filter((m) => Math.abs(m.eloScore - seedElo) <= 500);
+    if (pool.length < 2) pool = allPool;
     setQuickRank({
-      newMovie: { umId: inserted.id, movieId, title, posterPath, eloScore: INITIAL_ELO },
+      newMovie: { umId: inserted.id, movieId, title, posterPath, eloScore: seedElo },
       pool,
     });
   }
 
+  // Upsert movie metadata then pause for star rating before inserting into user list
   async function addMovie(tmdbMovie: TMDBMovie) {
     if (!userId) return;
     const detail = await getMovieDetail(tmdbMovie.id);
@@ -112,7 +120,7 @@ export default function MoviesPage() {
       id: movie.id, title: movie.title, poster_path: movie.poster_path,
       year: movie.year, genres: movie.genres, overview: movie.overview, director: movie.director,
     });
-    await insertAndRank(movie.id, movie.title, movie.poster_path, userMovies);
+    setStarPending({ id: movie.id, title: movie.title, posterPath: movie.poster_path });
   }
 
   async function addCuratedMovie(movie: CuratedMovie) {
@@ -125,7 +133,14 @@ export default function MoviesPage() {
       year: m.year, genres: m.genres, overview: m.overview, director: m.director,
     });
     setCuratedAddingId(null);
-    await insertAndRank(m.id, m.title, m.poster_path, userMovies);
+    setStarPending({ id: m.id, title: m.title, posterPath: m.poster_path });
+  }
+
+  async function handleStarConfirmed(stars: number) {
+    if (!starPending) return;
+    const { id, title, posterPath } = starPending;
+    setStarPending(null);
+    await insertAndRank(id, title, posterPath, userMovies, starsToElo(stars));
   }
 
   async function removeMovie(umId: string) {
@@ -324,6 +339,13 @@ export default function MoviesPage() {
         existingIds={existingIds}
         onAdd={addMovie}
         onClose={() => setPersonBrowser(null)}
+      />
+    )}
+
+    {starPending && (
+      <StarRatingModal
+        movie={starPending}
+        onConfirm={handleStarConfirmed}
       />
     )}
 

@@ -1,16 +1,17 @@
-// Map Letterboxd star rating (0.5–5) to a seeded ELO score
+// Map Letterboxd star rating (0.5–5) to a seeded ELO score.
+// Aligned with starsToElo in elo.ts: 3★ = 1000, spread ±250 per whole star.
 export function ratingToElo(rating: number): number {
   const map: Record<number, number> = {
-    0.5: 700,
-    1:   750,
-    1.5: 800,
-    2:   850,
-    2.5: 900,
-    3:   950,
-    3.5: 1000,
-    4:   1050,
-    4.5: 1100,
-    5:   1150,
+    0.5: 375,
+    1:   500,
+    1.5: 625,
+    2:   750,
+    2.5: 875,
+    3:   1000,
+    3.5: 1125,
+    4:   1250,
+    4.5: 1375,
+    5:   1500,
   };
   return map[Math.round(rating * 2) / 2] ?? 1000;
 }
