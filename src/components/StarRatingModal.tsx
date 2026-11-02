@@ -21,8 +21,8 @@ const LABELS: Record<number, string> = {
   5:   "All-time favorite",
 };
 
-// How much of star N (1-based) to fill given a rating
-function fillWidth(starIndex: number, rating: number): string {
+// Percentage of star N (1-based) that should be filled amber
+function fillPct(starIndex: number, rating: number): string {
   if (rating >= starIndex) return "100%";
   if (rating >= starIndex - 0.5) return "50%";
   return "0%";
@@ -36,7 +36,7 @@ export default function StarRatingModal({ movie, onConfirm }: Props) {
   const url = posterUrl(movie.posterPath, "w342");
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-background">
       <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6">
         {url && (
           <div className="relative w-32 h-48 rounded-2xl overflow-hidden shadow-2xl flex-shrink-0">
@@ -51,31 +51,28 @@ export default function StarRatingModal({ movie, onConfirm }: Props) {
         </div>
 
         {/* Half-star picker */}
-        <div
-          className="flex gap-1"
-          onMouseLeave={() => setHovered(0)}
-        >
+        <div className="flex gap-2" onMouseLeave={() => setHovered(0)}>
           {[1, 2, 3, 4, 5].map((star) => (
-            <div key={star} className="relative text-5xl leading-none select-none w-10 h-10 flex items-center justify-center">
-              {/* Empty star base */}
-              <span className="text-muted-foreground/25">★</span>
-              {/* Filled overlay clipped to fill width */}
+            <div key={star} className="relative" style={{ width: 44, height: 44, fontSize: 44, lineHeight: 1 }}>
+              {/* Empty star (base layer) */}
+              <span className="text-muted-foreground/25 select-none">★</span>
+              {/* Filled amber overlay — left-aligned text clipped at fillPct width */}
               <span
-                className="absolute inset-0 overflow-hidden text-amber-400 flex items-center justify-center pointer-events-none"
-                style={{ width: fillWidth(star, display) }}
+                className="absolute top-0 left-0 overflow-hidden text-amber-400 whitespace-nowrap select-none pointer-events-none"
+                style={{ width: fillPct(star, display) }}
               >
                 ★
               </span>
-              {/* Left half — 0.5 increment */}
+              {/* Left half click zone → half-star */}
               <button
-                className="absolute inset-y-0 left-0 w-1/2"
+                className="absolute inset-y-0 left-0 w-1/2 cursor-pointer"
                 onMouseEnter={() => setHovered(star - 0.5)}
                 onClick={() => setSelected(star - 0.5)}
                 aria-label={`${star - 0.5} stars`}
               />
-              {/* Right half — whole star */}
+              {/* Right half click zone → whole star */}
               <button
-                className="absolute inset-y-0 right-0 w-1/2"
+                className="absolute inset-y-0 right-0 w-1/2 cursor-pointer"
                 onMouseEnter={() => setHovered(star)}
                 onClick={() => setSelected(star)}
                 aria-label={`${star} stars`}
@@ -89,7 +86,8 @@ export default function StarRatingModal({ movie, onConfirm }: Props) {
         </p>
       </div>
 
-      <div className="px-6 py-8">
+      {/* Button sits above the bottom nav bar */}
+      <div className="px-6 pb-28 pt-4">
         <button
           onClick={() => selected > 0 && onConfirm(selected)}
           disabled={selected === 0}
