@@ -68,6 +68,7 @@ export default function MoviesPage() {
   const [watchlist, setWatchlist] = useState<WatchlistMovie[]>([]);
   const [watchlistOpen, setWatchlistOpen] = useState(true);
   const [movingFromWatchlist, setMovingFromWatchlist] = useState<number | null>(null);
+  const [letterboxdUsername, setLetterboxdUsername] = useState<string | null>(null);
 
   const [curated, setCurated] = useState<{ imdb: CuratedMovie[]; rollingStone: CuratedMovie[]; oscars: CuratedMovie[] } | null>(null);
   const [curatedAddingId, setCuratedAddingId] = useState<number | null>(null);
@@ -94,6 +95,12 @@ export default function MoviesPage() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
     setWatchlist((wl as unknown as WatchlistMovie[]) ?? []);
+    const { data: settings } = await supabase
+      .from("user_settings")
+      .select("letterboxd_username")
+      .eq("user_id", user.id)
+      .single();
+    setLetterboxdUsername(settings?.letterboxd_username ?? null);
     setLoading(false);
   }, [supabase]);
 
@@ -224,10 +231,10 @@ export default function MoviesPage() {
           </div>
           <button
             onClick={() => setShowImport(true)}
-            className="flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/80 border border-border px-3 py-2 rounded-lg transition-colors font-medium mt-1"
+            className={`flex items-center gap-1.5 text-xs border px-3 py-2 rounded-lg transition-colors font-medium mt-1 ${letterboxdUsername ? "bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400" : "bg-muted hover:bg-muted/80 border-border"}`}
           >
             <span className="text-base leading-none">🎞</span>
-            Letterboxd
+            {letterboxdUsername ? `@${letterboxdUsername} ✓` : "Letterboxd"}
           </button>
         </div>
 
