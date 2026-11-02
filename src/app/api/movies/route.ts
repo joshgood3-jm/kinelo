@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
       const data = await discoverMovies({
         with_genres: genreId,
         sort_by: "vote_average.desc",
-        "vote_count.gte": "300",
+        "vote_count.gte": "2000",
         language: "en-US",
         page,
       });
