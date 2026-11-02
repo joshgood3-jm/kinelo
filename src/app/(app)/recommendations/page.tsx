@@ -5,8 +5,9 @@ import Image from "next/image";
 import { Sparkles, Plus, Check, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getMovieDetail, tmdbMovieToMovie } from "@/lib/tmdb";
-import { INITIAL_ELO } from "@/lib/elo";
+import { starsToListElo } from "@/lib/elo";
 import QuickRankModal, { type QuickRankMovie } from "@/components/QuickRankModal";
+import StarRatingModal from "@/components/StarRatingModal";
 import type { TMDBMovieDetail, UserMovie } from "@/types";
 
 interface Rec {
@@ -29,6 +30,7 @@ export default function RecommendationsPage() {
   const [justAdded, setJustAdded] = useState<Set<number>>(new Set());
   const [userId, setUserId] = useState<string | null>(null);
   const [quickRank, setQuickRank] = useState<{ newMovie: QuickRankMovie; pool: QuickRankMovie[] } | null>(null);
+  const [starPending, setStarPending] = useState<{ movie: TMDBMovieDetail; m: { id: number; title: string; poster_path: string | null } } | null>(null);
   const userMoviesRef = useRef<UserMovie[]>([]);
   const supabase = createClient();
 
@@ -79,21 +81,34 @@ export default function RecommendationsPage() {
       id: m.id, title: m.title, poster_path: m.poster_path,
       year: m.year, genres: m.genres, overview: m.overview, director: m.director,
     });
+    setAdding(null);
+    setStarPending({ movie, m: { id: m.id, title: m.title, poster_path: m.poster_path } });
+  }
+
+  async function handleStarConfirmed(stars: number) {
+    if (!starPending || !userId) return;
+    const { movie, m } = starPending;
+    setStarPending(null);
+    const currentElos = userMoviesRef.current.map((um) => um.elo_score);
+    const seedElo = starsToListElo(stars, currentElos);
     const { data: inserted } = await supabase
       .from("user_movies")
-      .insert({ user_id: userId, movie_id: m.id, elo_score: INITIAL_ELO })
+      .insert({ user_id: userId, movie_id: m.id, elo_score: seedElo })
       .select("id")
       .single();
-    setAdding(null);
 
     if (inserted) {
       const pool = userMoviesRef.current.map((um) => {
         const mov = (um as unknown as { movies: { title: string; poster_path: string | null } }).movies;
         return { umId: um.id, movieId: um.movie_id, title: mov?.title ?? "", posterPath: mov?.poster_path ?? null, eloScore: um.elo_score };
       });
+      const BAND = 250;
+      let filteredPool = pool.filter((p) => Math.abs(p.eloScore - seedElo) <= BAND);
+      if (filteredPool.length < 3) filteredPool = pool.filter((p) => Math.abs(p.eloScore - seedElo) <= 500);
+      if (filteredPool.length < 2) filteredPool = pool;
       setQuickRank({
-        newMovie: { umId: inserted.id, movieId: m.id, title: m.title, posterPath: m.poster_path, eloScore: INITIAL_ELO },
-        pool,
+        newMovie: { umId: inserted.id, movieId: m.id, title: m.title, posterPath: m.poster_path ?? null, eloScore: seedElo },
+        pool: filteredPool,
       });
     }
 
@@ -121,6 +136,12 @@ export default function RecommendationsPage() {
 
   return (
     <>
+    {starPending && (
+      <StarRatingModal
+        movie={{ id: starPending.m.id, title: starPending.m.title, posterPath: starPending.m.poster_path }}
+        onConfirm={handleStarConfirmed}
+      />
+    )}
     {quickRank && userId && (
       <QuickRankModal
         userId={userId}
