@@ -89,9 +89,15 @@ export default function QuickRankModal({ userId, newMovie, pool, fullPool, onDon
   const [choosing, setChoosing] = useState(false);
   const [finalRank, setFinalRank] = useState<number | null>(null);
   const [topSpot, setTopSpot] = useState(false);
+  // Track ELO updates from comparisons so rank checks use current values
+  const updatedElos = useRef<Map<string, number>>(new Map());
 
   const opponent = opponents[compCount];
   const progress = maxComps > 0 ? compCount / maxComps : 1;
+
+  function resolvedElo(m: QuickRankMovie) {
+    return updatedElos.current.get(m.umId) ?? m.eloScore;
+  }
 
   async function choose(newMovieWon: boolean) {
     if (choosing || done) return;
@@ -99,10 +105,14 @@ export default function QuickRankModal({ userId, newMovie, pool, fullPool, onDon
 
     const winnerUmId = newMovieWon ? newMovie.umId : opponent.umId;
     const loserUmId = newMovieWon ? opponent.umId : newMovie.umId;
-    const winnerElo = newMovieWon ? currentElo : opponent.eloScore;
-    const loserElo = newMovieWon ? opponent.eloScore : currentElo;
+    const winnerElo = newMovieWon ? currentElo : resolvedElo(opponent);
+    const loserElo = newMovieWon ? resolvedElo(opponent) : currentElo;
     const { winner: newWinElo, loser: newLoseElo } = newRatings(winnerElo, loserElo);
     const newNewMovieElo = newMovieWon ? newWinElo : newLoseElo;
+
+    // Record updated ELOs locally so subsequent checks are accurate
+    updatedElos.current.set(winnerUmId, newWinElo);
+    updatedElos.current.set(loserUmId, newLoseElo);
 
     await Promise.all([
       supabase.from("user_movies").update({ elo_score: newWinElo }).eq("id", winnerUmId),
@@ -116,21 +126,28 @@ export default function QuickRankModal({ userId, newMovie, pool, fullPool, onDon
 
     setCurrentElo(newNewMovieElo);
 
-    // Check if new movie just claimed #1 across the full list
     const rankSource = fullPool ?? pool;
-    const isTopNow = rankSource.every((m) => m.eloScore <= newNewMovieElo);
-    if (isTopNow && newMovieWon && !topSpot) {
-      setTopSpot(true);
-      setTimeout(() => setTopSpot(false), 3000);
+
+    // Mid-comparison #1 check using locally updated ELOs
+    if (newMovieWon && !topSpot) {
+      const isTopNow = rankSource.every((m) => resolvedElo(m) <= newNewMovieElo);
+      if (isTopNow) {
+        setTopSpot(true);
+        setTimeout(() => setTopSpot(false), 3200);
+      }
     }
 
     const nextCount = compCount + 1;
 
     if (nextCount >= maxComps) {
-      const rankSource = fullPool ?? pool;
-      const rank = rankSource.filter((m) => m.eloScore > newNewMovieElo).length + 1;
+      const rank = rankSource.filter((m) => resolvedElo(m) > newNewMovieElo).length + 1;
       setFinalRank(rank);
       setDone(true);
+      // Also fire on done screen if rank landed at #1
+      if (rank === 1 && !topSpot) {
+        setTopSpot(true);
+        setTimeout(() => setTopSpot(false), 3200);
+      }
     } else {
       setCompCount(nextCount);
     }
