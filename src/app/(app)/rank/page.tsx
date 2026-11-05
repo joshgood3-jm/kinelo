@@ -38,6 +38,27 @@ function Confetti() {
   );
 }
 
+function ChampionshipIntro() {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 40,
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      background: "rgba(0,0,0,0.78)",
+    }}>
+      <style>{`
+        @keyframes champScale{0%{transform:scale(0.4);opacity:0}60%{transform:scale(1.18)}100%{transform:scale(1);opacity:1}}
+        @keyframes champSlide{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
+        @keyframes champOut{from{opacity:1}to{opacity:0}}
+      `}</style>
+      <div style={{ animation: "champScale 0.5s cubic-bezier(.34,1.56,.64,1) forwards", fontSize: 58 }}>⚔️</div>
+      <div style={{ animation: "champSlide 0.4s 0.28s ease-out both", textAlign: "center", marginTop: 14 }}>
+        <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: 3, color: "#f59e0b", textTransform: "uppercase" }}>Championship Match</div>
+        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", marginTop: 5 }}>Only a direct win claims #1</div>
+      </div>
+    </div>
+  );
+}
+
 function TopSpotOverlay({ title, onDismiss }: { title: string; onDismiss: () => void }) {
   return (
     <div
@@ -81,6 +102,7 @@ export default function RankPage() {
   const [lastResult, setLastResult] = useState<SessionResult>(null);
   const [topSpotMovie, setTopSpotMovie] = useState<string | null>(null);
   const [isChampionshipMatch, setIsChampionshipMatch] = useState(false);
+  const [championshipIntro, setChampionshipIntro] = useState(false);
 
   const supabase = createClient();
 
@@ -114,6 +136,8 @@ export default function RankPage() {
     const challenger = sorted.slice(1).find((m) => champion.elo_score - m.elo_score <= CHALLENGER_THRESHOLD);
     if (challenger) {
       setIsChampionshipMatch(true);
+      setChampionshipIntro(true);
+      setTimeout(() => setChampionshipIntro(false), 1600);
       setPair(Math.random() > 0.5 ? [champion, challenger] : [challenger, champion]);
       return;
     }
@@ -189,6 +213,7 @@ export default function RankPage() {
 
   return (
     <div className="min-h-screen flex flex-col px-4 pt-8">
+      {championshipIntro && <ChampionshipIntro />}
       {topSpotMovie && <TopSpotOverlay title={topSpotMovie} onDismiss={() => setTopSpotMovie(null)} />}
       <div className="text-center mb-6">
         {isChampionshipMatch && (
@@ -208,8 +233,8 @@ export default function RankPage() {
           {pair.map((movie, idx) => (
             <button
               key={movie.id}
-              onClick={() => !choosing && choose(movie, pair[1 - idx])}
-              disabled={choosing}
+              onClick={() => !choosing && !championshipIntro && choose(movie, pair[1 - idx])}
+              disabled={choosing || championshipIntro}
               className="flex-1 flex flex-col items-center gap-3 p-4 bg-card border-2 border-border rounded-2xl hover:border-primary hover:glow-primary transition-all duration-200 active:scale-95 disabled:opacity-50 max-w-[48%]"
             >
               <div className="relative w-full aspect-[2/3] rounded-xl overflow-hidden bg-muted poster-shadow">
