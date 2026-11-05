@@ -115,6 +115,8 @@ export default function RankPage() {
   const [topSpotMovie, setTopSpotMovie] = useState<string | null>(null);
   const [isChampionshipMatch, setIsChampionshipMatch] = useState(false);
   const [championshipIntro, setChampionshipIntro] = useState(false);
+  const [pendingChampionshipIntro, setPendingChampionshipIntro] = useState(false);
+  const champCooldown = useRef(0); // picks since last championship match
 
   const supabase = createClient();
 
@@ -141,26 +143,37 @@ export default function RankPage() {
     pickPair(ranked);
   }, [supabase]);
 
-  function pickPair(movieList: RankableMovie[]) {
+  const CHAMP_COOLDOWN = 10;
+
+  function pickPair(movieList: RankableMovie[], celebrationActive = false) {
     if (movieList.length < 2) { setPair(null); return; }
     const sorted = [...movieList].sort((a, b) => b.elo_score - a.elo_score);
     const champion = sorted[0];
     const challenger = sorted.slice(1).find((m) => champion.elo_score - m.elo_score <= CHALLENGER_THRESHOLD);
-    if (challenger) {
+
+    if (challenger && champCooldown.current >= CHAMP_COOLDOWN) {
       setIsChampionshipMatch(true);
-      setChampionshipIntro(true);
+      champCooldown.current = 0;
+      if (celebrationActive) {
+        // Defer intro until celebration is dismissed
+        setPendingChampionshipIntro(true);
+      } else {
+        setChampionshipIntro(true);
+      }
       setPair(Math.random() > 0.5 ? [champion, challenger] : [challenger, champion]);
       return;
     }
+
     setIsChampionshipMatch(false);
-    // Prefer movies with similar ELO scores for more meaningful comparisons
-    const topHalf = sorted.slice(0, Math.max(2, Math.ceil(sorted.length / 2)));
+    // Champion sits out normal ranking — only appears in championship matches
+    const nonChampions = sorted.slice(1);
+    if (nonChampions.length < 2) { setPair(null); return; }
+    const topHalf = nonChampions.slice(0, Math.max(2, Math.ceil(nonChampions.length / 2)));
     const a = topHalf[Math.floor(Math.random() * topHalf.length)];
-    // Find a movie within 200 ELO points of a (close match)
-    const candidates = movieList.filter((m) => m.id !== a.id && Math.abs(m.elo_score - a.elo_score) < 200);
+    const candidates = nonChampions.filter((m) => m.id !== a.id && Math.abs(m.elo_score - a.elo_score) < 200);
     const b = candidates.length > 0
       ? candidates[Math.floor(Math.random() * candidates.length)]
-      : movieList.filter((m) => m.id !== a.id)[Math.floor(Math.random() * (movieList.length - 1))];
+      : nonChampions.filter((m) => m.id !== a.id)[Math.floor(Math.random() * (nonChampions.length - 1))];
     setPair(Math.random() > 0.5 ? [a, b] : [b, a]);
   }
 
@@ -190,14 +203,15 @@ export default function RankPage() {
     });
 
     const newNo1 = updated.reduce((a, b) => a.elo_score > b.elo_score ? a : b);
-    if (isChampionshipMatch && newNo1.id === winner.id && prevNo1.id !== winner.id) {
-      setTopSpotMovie(winner.title);
-    }
+    const crowned = isChampionshipMatch && newNo1.id === winner.id && prevNo1.id !== winner.id;
+    if (crowned) setTopSpotMovie(winner.title);
+
+    if (!isChampionshipMatch) champCooldown.current += 1;
 
     setSessionCount((c) => c + 1);
     setLastResult({ winner: { ...winner, elo_score: newWinner }, loser: { ...loser, elo_score: newLoser }, count: sessionCount + 1 });
     setMovies(updated);
-    pickPair(updated);
+    pickPair(updated, crowned);
     setChoosing(false);
   }
 
@@ -225,7 +239,15 @@ export default function RankPage() {
   return (
     <div className="min-h-screen flex flex-col px-4 pt-8">
       {championshipIntro && <ChampionshipIntro onReady={() => setChampionshipIntro(false)} />}
-      {topSpotMovie && <TopSpotOverlay title={topSpotMovie} onDismiss={() => setTopSpotMovie(null)} />}
+      {topSpotMovie && (
+        <TopSpotOverlay title={topSpotMovie} onDismiss={() => {
+          setTopSpotMovie(null);
+          if (pendingChampionshipIntro) {
+            setPendingChampionshipIntro(false);
+            setChampionshipIntro(true);
+          }
+        }} />
+      )}
       <div className="text-center mb-6">
         {isChampionshipMatch && (
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mb-3"

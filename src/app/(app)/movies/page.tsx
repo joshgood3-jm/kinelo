@@ -120,7 +120,9 @@ export default function MoviesPage() {
 
     if (!inserted) return;
     const allPool = currentPool.map(toQuickRankMovie);
-    const pool = neighborhoodPool(allPool, seedElo);
+    const champion = allPool.length > 0 ? allPool.reduce((a, b) => a.eloScore > b.eloScore ? a : b) : null;
+    const poolWithoutChampion = champion ? allPool.filter((m) => m.umId !== champion.umId) : allPool;
+    const pool = neighborhoodPool(poolWithoutChampion, seedElo);
     setQuickRank({
       newMovie: { umId: inserted.id, movieId, title, posterPath, eloScore: seedElo },
       pool,

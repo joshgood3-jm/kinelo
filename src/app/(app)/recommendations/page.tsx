@@ -194,7 +194,9 @@ export default function RecommendationsPage() {
         const mov = (um as unknown as { movies: { title: string; poster_path: string | null } }).movies;
         return { umId: um.id, movieId: um.movie_id, title: mov?.title ?? "", posterPath: mov?.poster_path ?? null, eloScore: um.elo_score };
       });
-      setQuickRank({ newMovie: { umId: inserted.id, movieId: m.id, title: m.title, posterPath: m.poster_path ?? null, eloScore: seedElo }, pool: neighborhoodPool(allPool, seedElo), fullPool: allPool });
+      const champion = allPool.length > 0 ? allPool.reduce((a, b) => a.eloScore > b.eloScore ? a : b) : null;
+      const poolWithoutChampion = champion ? allPool.filter((m) => m.umId !== champion.umId) : allPool;
+      setQuickRank({ newMovie: { umId: inserted.id, movieId: m.id, title: m.title, posterPath: m.poster_path ?? null, eloScore: seedElo }, pool: neighborhoodPool(poolWithoutChampion, seedElo), fullPool: allPool });
     }
 
     if (savedIds.has(movie.id)) {
