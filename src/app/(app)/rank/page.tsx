@@ -38,22 +38,34 @@ function Confetti() {
   );
 }
 
-function ChampionshipIntro() {
+function ChampionshipIntro({ onReady }: { onReady: () => void }) {
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 40,
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      background: "rgba(0,0,0,0.78)",
+      background: "rgba(0,0,0,0.82)",
     }}>
       <style>{`
-        @keyframes champScale{0%{transform:scale(0.4);opacity:0}60%{transform:scale(1.18)}100%{transform:scale(1);opacity:1}}
-        @keyframes champSlide{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
-        @keyframes champOut{from{opacity:1}to{opacity:0}}
+        @keyframes champScale{0%{transform:scale(0.3);opacity:0}65%{transform:scale(1.22)}100%{transform:scale(1);opacity:1}}
+        @keyframes champSlide{from{transform:translateY(18px);opacity:0}to{transform:translateY(0);opacity:1}}
+        @keyframes champPulse{0%,100%{opacity:1}50%{opacity:0.6}}
       `}</style>
-      <div style={{ animation: "champScale 0.5s cubic-bezier(.34,1.56,.64,1) forwards", fontSize: 58 }}>⚔️</div>
-      <div style={{ animation: "champSlide 0.4s 0.28s ease-out both", textAlign: "center", marginTop: 14 }}>
-        <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: 3, color: "#f59e0b", textTransform: "uppercase" }}>Championship Match</div>
-        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", marginTop: 5 }}>Only a direct win claims #1</div>
+      <div style={{ animation: "champScale 0.65s cubic-bezier(.34,1.56,.64,1) forwards", fontSize: 72 }}>⚔️</div>
+      <div style={{ animation: "champSlide 0.5s 0.4s ease-out both", textAlign: "center", marginTop: 18 }}>
+        <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: 3, color: "#f59e0b", textTransform: "uppercase" }}>Championship Match</div>
+        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginTop: 6 }}>Only a direct win claims #1</div>
+      </div>
+      <div style={{ animation: "champSlide 0.5s 0.9s ease-out both", marginTop: 40 }}>
+        <button
+          onClick={onReady}
+          style={{
+            padding: "14px 36px", borderRadius: 999, border: "none", cursor: "pointer",
+            background: "linear-gradient(135deg,#f59e0b,#d97706)",
+            color: "#fff", fontSize: 16, fontWeight: 700, letterSpacing: 0.5,
+          }}
+        >
+          Make your pick
+        </button>
       </div>
     </div>
   );
@@ -137,7 +149,6 @@ export default function RankPage() {
     if (challenger) {
       setIsChampionshipMatch(true);
       setChampionshipIntro(true);
-      setTimeout(() => setChampionshipIntro(false), 1600);
       setPair(Math.random() > 0.5 ? [champion, challenger] : [challenger, champion]);
       return;
     }
@@ -213,7 +224,7 @@ export default function RankPage() {
 
   return (
     <div className="min-h-screen flex flex-col px-4 pt-8">
-      {championshipIntro && <ChampionshipIntro />}
+      {championshipIntro && <ChampionshipIntro onReady={() => setChampionshipIntro(false)} />}
       {topSpotMovie && <TopSpotOverlay title={topSpotMovie} onDismiss={() => setTopSpotMovie(null)} />}
       <div className="text-center mb-6">
         {isChampionshipMatch && (
