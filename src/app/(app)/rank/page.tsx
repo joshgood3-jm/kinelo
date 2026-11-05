@@ -1,11 +1,63 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { newRatings } from "@/lib/elo";
 import { posterUrl } from "@/lib/tmdb";
 import Image from "next/image";
 import Link from "next/link";
 import { Trophy, SkipForward } from "lucide-react";
+
+const CONFETTI_COLORS = ["#FF6B6B","#4ECDC4","#FFE66D","#A8E6CF","#FF8B94","#C7B8EA","#FFA07A","#818cf8"];
+
+function Confetti() {
+  const pieces = useRef(
+    Array.from({ length: 48 }, (_, i) => ({
+      id: i,
+      left: `${(i / 48) * 100 + (Math.random() * 2 - 1)}%`,
+      delay: `${(Math.random() * 0.7).toFixed(2)}s`,
+      dur: `${(1.9 + Math.random() * 0.7).toFixed(2)}s`,
+      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      size: `${5 + Math.random() * 8}px`,
+      round: Math.random() > 0.5,
+      rot: Math.round(Math.random() * 360),
+    }))
+  );
+  return (
+    <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+      <style>{`@keyframes cf{0%{transform:translateY(0) rotate(0deg);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}`}</style>
+      {pieces.current.map((p) => (
+        <div key={p.id} style={{
+          position: "absolute", top: "-12px", left: p.left,
+          width: p.size, height: p.size, background: p.color,
+          borderRadius: p.round ? "50%" : "2px",
+          transform: `rotate(${p.rot}deg)`,
+          animation: `cf ${p.dur} ${p.delay} ease-in forwards`,
+        }} />
+      ))}
+    </div>
+  );
+}
+
+function TopSpotOverlay({ title, onDismiss }: { title: string; onDismiss: () => void }) {
+  return (
+    <div
+      onClick={onDismiss}
+      style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}
+    >
+      <Confetti />
+      <div style={{ position: "relative", zIndex: 1, margin: "0 24px" }}
+        className="bg-card border border-border rounded-3xl px-8 py-7 text-center shadow-2xl"
+      >
+        <p style={{ fontSize: 44, marginBottom: 6 }}>🏆</p>
+        <p className="text-xl font-bold" style={{ background: "linear-gradient(135deg,#a78bfa,#f472b6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>New #1!</p>
+        <p className="text-muted-foreground text-sm mt-1">
+          <span className="font-semibold text-foreground">"{title}"</span><br />is your top-ranked film
+        </p>
+        <p className="text-xs text-muted-foreground mt-4">Tap to continue</p>
+      </div>
+    </div>
+  );
+}
 
 interface RankableMovie {
   id: string;
@@ -25,6 +77,7 @@ export default function RankPage() {
   const [choosing, setChoosing] = useState(false);
   const [sessionCount, setSessionCount] = useState(0);
   const [lastResult, setLastResult] = useState<SessionResult>(null);
+  const [topSpotMovie, setTopSpotMovie] = useState<string | null>(null);
 
   const supabase = createClient();
 
@@ -84,11 +137,18 @@ export default function RankPage() {
       }),
     ]);
 
+    const prevNo1 = movies.reduce((a, b) => a.elo_score > b.elo_score ? a : b);
+
     const updated = movies.map((m) => {
       if (m.id === winner.id) return { ...m, elo_score: newWinner };
       if (m.id === loser.id) return { ...m, elo_score: newLoser };
       return m;
     });
+
+    const newNo1 = updated.reduce((a, b) => a.elo_score > b.elo_score ? a : b);
+    if (newNo1.id === winner.id && prevNo1.id !== winner.id) {
+      setTopSpotMovie(winner.title);
+    }
 
     setSessionCount((c) => c + 1);
     setLastResult({ winner: { ...winner, elo_score: newWinner }, loser: { ...loser, elo_score: newLoser }, count: sessionCount + 1 });
@@ -120,6 +180,7 @@ export default function RankPage() {
 
   return (
     <div className="min-h-screen flex flex-col px-4 pt-8">
+      {topSpotMovie && <TopSpotOverlay title={topSpotMovie} onDismiss={() => setTopSpotMovie(null)} />}
       <div className="text-center mb-6">
         <h1 className="text-2xl font-bold mb-1">Which do you prefer?</h1>
         <p className="text-muted-foreground text-sm">
