@@ -140,10 +140,16 @@ export default function QuickRankModal({ userId, newMovie, pool, fullPool, onDon
     const nextCount = compCount + 1;
 
     if (nextCount >= maxComps) {
-      const rank = rankSource.filter((m) => resolvedElo(m) > newNewMovieElo).length + 1;
+      // Query actual rank from DB — in-memory ELOs miss movies outside the comparison pool
+      const { data: ranked } = await supabase
+        .from("user_movies")
+        .select("movie_id")
+        .eq("user_id", userId)
+        .order("elo_score", { ascending: false });
+      const dbRank = ranked ? ranked.findIndex((m: { movie_id: number }) => m.movie_id === newMovie.movieId) + 1 : 0;
+      const rank = dbRank > 0 ? dbRank : rankSource.filter((m) => resolvedElo(m) > newNewMovieElo).length + 1;
       setFinalRank(rank);
       setDone(true);
-      // Also fire on done screen if rank landed at #1
       if (rank === 1 && !topSpot) {
         setTopSpot(true);
         setTimeout(() => setTopSpot(false), 3200);

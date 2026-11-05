@@ -59,6 +59,8 @@ function TopSpotOverlay({ title, onDismiss }: { title: string; onDismiss: () => 
   );
 }
 
+const CHALLENGER_THRESHOLD = 25;
+
 interface RankableMovie {
   id: string;
   movie_id: number;
@@ -78,6 +80,7 @@ export default function RankPage() {
   const [sessionCount, setSessionCount] = useState(0);
   const [lastResult, setLastResult] = useState<SessionResult>(null);
   const [topSpotMovie, setTopSpotMovie] = useState<string | null>(null);
+  const [isChampionshipMatch, setIsChampionshipMatch] = useState(false);
 
   const supabase = createClient();
 
@@ -106,9 +109,16 @@ export default function RankPage() {
 
   function pickPair(movieList: RankableMovie[]) {
     if (movieList.length < 2) { setPair(null); return; }
-    // Prefer movies with similar ELO scores for more meaningful comparisons
     const sorted = [...movieList].sort((a, b) => b.elo_score - a.elo_score);
-    // Pick a random movie from top half, then a close opponent
+    const champion = sorted[0];
+    const challenger = sorted.slice(1).find((m) => champion.elo_score - m.elo_score <= CHALLENGER_THRESHOLD);
+    if (challenger) {
+      setIsChampionshipMatch(true);
+      setPair(Math.random() > 0.5 ? [champion, challenger] : [challenger, champion]);
+      return;
+    }
+    setIsChampionshipMatch(false);
+    // Prefer movies with similar ELO scores for more meaningful comparisons
     const topHalf = sorted.slice(0, Math.max(2, Math.ceil(sorted.length / 2)));
     const a = topHalf[Math.floor(Math.random() * topHalf.length)];
     // Find a movie within 200 ELO points of a (close match)
@@ -116,7 +126,6 @@ export default function RankPage() {
     const b = candidates.length > 0
       ? candidates[Math.floor(Math.random() * candidates.length)]
       : movieList.filter((m) => m.id !== a.id)[Math.floor(Math.random() * (movieList.length - 1))];
-    // Randomly flip order so neither is always on left
     setPair(Math.random() > 0.5 ? [a, b] : [b, a]);
   }
 
@@ -146,7 +155,7 @@ export default function RankPage() {
     });
 
     const newNo1 = updated.reduce((a, b) => a.elo_score > b.elo_score ? a : b);
-    if (newNo1.id === winner.id && prevNo1.id !== winner.id) {
+    if (isChampionshipMatch && newNo1.id === winner.id && prevNo1.id !== winner.id) {
       setTopSpotMovie(winner.title);
     }
 
@@ -182,6 +191,12 @@ export default function RankPage() {
     <div className="min-h-screen flex flex-col px-4 pt-8">
       {topSpotMovie && <TopSpotOverlay title={topSpotMovie} onDismiss={() => setTopSpotMovie(null)} />}
       <div className="text-center mb-6">
+        {isChampionshipMatch && (
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mb-3"
+            style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#fff" }}>
+            ⚔️ Championship Match
+          </div>
+        )}
         <h1 className="text-2xl font-bold mb-1">Which do you prefer?</h1>
         <p className="text-muted-foreground text-sm">
           {sessionCount > 0 ? `${sessionCount} ranked this session` : "Tap a movie to vote"}
