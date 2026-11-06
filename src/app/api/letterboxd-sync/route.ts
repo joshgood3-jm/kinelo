@@ -26,7 +26,7 @@ interface SyncedMovie {
 
 interface SyncResult {
   synced: SyncedMovie[];
-  debug: { rssFetchOk: boolean; rssStatus: number; filmsInRss: number; newInRss: number };
+  debug: { rssFetchOk: boolean; rssStatus: number; filmsInRss: number; newInRss: number; skipped: { title: string; reason: string }[] };
 }
 
 async function syncUser(
@@ -40,7 +40,7 @@ async function syncUser(
     signal: AbortSignal.timeout(10000),
   });
 
-  const debug = { rssFetchOk: rssRes.ok, rssStatus: rssRes.status, filmsInRss: 0, newInRss: 0 };
+  const debug = { rssFetchOk: rssRes.ok, rssStatus: rssRes.status, filmsInRss: 0, newInRss: 0, skipped: [] as { title: string; reason: string }[] };
   if (!rssRes.ok) return { synced: [], debug };
 
   const xml = await rssRes.text();
@@ -63,7 +63,8 @@ async function syncUser(
   for (const film of toAdd) {
     try {
       const tmdbId = film.tmdbId ?? await tmdbSearchByTitle(film.title, film.year);
-      if (!tmdbId || existingIds.has(tmdbId)) continue;
+      if (!tmdbId) { debug.skipped.push({ title: film.title, reason: "tmdb_not_found" }); continue; }
+      if (existingIds.has(tmdbId)) { debug.skipped.push({ title: film.title, reason: "already_in_list" }); continue; }
 
       const detail = await getMovieDetail(tmdbId);
       const movie = tmdbMovieToMovie(detail);
@@ -87,9 +88,11 @@ async function syncUser(
         existingIds.add(tmdbId);
         currentElos.push(seedElo);
         synced.push({ umId: inserted.id, movieId: tmdbId, title: movie.title, posterPath: movie.poster_path, eloScore: seedElo });
+      } else if (error) {
+        debug.skipped.push({ title: film.title, reason: `db_error:${error.code}` });
       }
-    } catch {
-      // skip on TMDB/DB error
+    } catch (e) {
+      debug.skipped.push({ title: film.title, reason: `exception:${String(e).slice(0, 80)}` });
     }
   }
   return { synced, debug };
