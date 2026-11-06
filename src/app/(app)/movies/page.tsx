@@ -218,6 +218,7 @@ export default function MoviesPage() {
       const res = await fetch("/api/letterboxd-sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: letterboxdUsername }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Sync failed");
+      console.log("[letterboxd-sync]", data.debug);
       setSyncResult(data.added > 0 ? `${data.added} new movie${data.added === 1 ? "" : "s"} added!` : "Already up to date");
       if (data.added > 0 && data.movies?.length > 0) {
         // Fetch fresh pool from DB so QuickRank has accurate ELO scores
