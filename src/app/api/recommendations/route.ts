@@ -198,6 +198,7 @@ export async function GET() {
     if (result.status !== "fulfilled" || !result.value) return;
     const movie = result.value;
     if (!movie.id || (movie as { success?: boolean }).success === false) return;
+    if (movie.runtime && movie.runtime < 45) return; // skip shorts and music videos
     const [, candidate] = sortedCandidates[i];
     recs.push({ movie, score: candidate.score, reasons: candidate.reasons.slice(0, 2) });
   });
