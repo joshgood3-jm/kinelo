@@ -4,6 +4,7 @@ import { parseDiaryRss } from "@/lib/letterboxd";
 import { getMovieDetail, tmdbMovieToMovie } from "@/lib/tmdb";
 import { starsToListElo, percentileElo } from "@/lib/elo";
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const TMDB_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 
@@ -29,8 +30,12 @@ interface SyncResult {
   debug: { rssFetchOk: boolean; rssStatus: number; filmsInRss: number; newInRss: number; skipped: { title: string; reason: string }[] };
 }
 
+// moviesDb: admin client (bypasses RLS on global movies table)
+// userDb: user-authed client for user_movies (or admin for cron)
 async function syncUser(
-  admin: ReturnType<typeof createAdminClient>,
+  moviesDb: ReturnType<typeof createAdminClient>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  userDb: SupabaseClient<any>,
   userId: string,
   username: string,
   lastSynced: string | null
@@ -48,7 +53,7 @@ async function syncUser(
   debug.filmsInRss = films.length;
 
   const cutoff = lastSynced ? new Date(lastSynced) : null;
-  const { data: existing } = await admin
+  const { data: existing } = await userDb
     .from("user_movies")
     .select("movie_id, elo_score")
     .eq("user_id", userId);
@@ -69,7 +74,7 @@ async function syncUser(
       const detail = await getMovieDetail(tmdbId);
       const movie = tmdbMovieToMovie(detail);
 
-      await admin.from("movies").upsert({
+      await moviesDb.from("movies").upsert({
         id: movie.id, title: movie.title, poster_path: movie.poster_path,
         year: movie.year, genres: movie.genres, overview: movie.overview, director: movie.director,
       });
@@ -78,7 +83,7 @@ async function syncUser(
         ? starsToListElo(film.rating, currentElos)
         : percentileElo(0.5, currentElos);
 
-      const { data: inserted, error } = await admin.from("user_movies").insert({
+      const { data: inserted, error } = await userDb.from("user_movies").insert({
         user_id: userId,
         movie_id: tmdbId,
         elo_score: seedElo,
@@ -108,15 +113,18 @@ export async function POST(request: Request) {
   const username: string | undefined = body.username;
   if (!username) return NextResponse.json({ error: "No Letterboxd username provided" }, { status: 400 });
 
+  // Use user's authenticated client for user_movies (avoids needing service role)
+  // Use admin only for the global movies table upsert and user_settings
   const admin = createAdminClient();
-  const { data: settings } = await admin
+  const { data: settings } = await supabase
     .from("user_settings")
     .select("letterboxd_last_synced")
     .eq("user_id", user.id)
     .single();
 
-  const { synced, debug } = await syncUser(admin, user.id, username, settings?.letterboxd_last_synced ?? null);
-  await admin.from("user_settings")
+  const { synced, debug } = await syncUser(admin, supabase, user.id, username, settings?.letterboxd_last_synced ?? null);
+  await supabase
+    .from("user_settings")
     .update({ letterboxd_last_synced: new Date().toISOString() })
     .eq("user_id", user.id);
 
@@ -140,7 +148,7 @@ export async function GET(request: Request) {
 
   let total = 0;
   for (const s of settings) {
-    const { synced } = await syncUser(admin, s.user_id, s.letterboxd_username, s.letterboxd_last_synced);
+    const { synced } = await syncUser(admin, admin, s.user_id, s.letterboxd_username, s.letterboxd_last_synced);
     total += synced.length;
     await admin.from("user_settings")
       .update({ letterboxd_last_synced: new Date().toISOString() })
