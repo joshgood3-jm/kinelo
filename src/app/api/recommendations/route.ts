@@ -31,7 +31,8 @@ interface FilmographyMovie {
   vote_average: number;
   vote_count: number;
   release_date: string;
-  job?: string; // present in crew results
+  job?: string;   // present in crew results
+  video?: boolean; // true for music videos / shorts — exclude these
 }
 
 async function tmdbGet<T>(path: string): Promise<T | null> {
@@ -164,10 +165,11 @@ export async function GET() {
     let creatorContributions = 0;
     for (const film of films) {
       if (rankedIds.has(film.id)) continue;
+      if (film.video) continue; // skip music videos and shorts
       if ((film.vote_count ?? 0) < MIN_VOTES) continue;
       if ((film.vote_average ?? 0) < MIN_RATING) continue;
       if (!film.release_date) continue;
-      if (creatorContributions >= MAX_PER_CREATOR) break; // cap per creator
+      if (creatorContributions >= MAX_PER_CREATOR) break;
 
       const existing = candidateScores.get(film.id);
       if (existing) {
@@ -200,5 +202,28 @@ export async function GET() {
     recs.push({ movie, score: candidate.score, reasons: candidate.reasons.slice(0, 2) });
   });
 
-  return NextResponse.json({ recs, rankedIds: Array.from(rankedIds) });
+  // Diversity pass: prevent any single creator from dominating the top of the list.
+  // Interleave so no primary reason label appears more than twice consecutively.
+  const MAX_CONSECUTIVE = 2;
+  const diversified: typeof recs = [];
+  const reasonCount: Record<string, number> = {};
+  const remaining = [...recs];
+
+  while (remaining.length > 0) {
+    const idx = remaining.findIndex((r) => {
+      const label = r.reasons[0] ?? "";
+      return (reasonCount[label] ?? 0) < MAX_CONSECUTIVE;
+    });
+    if (idx === -1) {
+      // All labels at cap — reset counts and drain
+      Object.keys(reasonCount).forEach((k) => { reasonCount[k] = 0; });
+      continue;
+    }
+    const [rec] = remaining.splice(idx, 1);
+    const label = rec.reasons[0] ?? "";
+    reasonCount[label] = (reasonCount[label] ?? 0) + 1;
+    diversified.push(rec);
+  }
+
+  return NextResponse.json({ recs: diversified, rankedIds: Array.from(rankedIds) });
 }
