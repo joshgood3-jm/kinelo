@@ -80,23 +80,23 @@ async function syncUser(
 }
 
 // POST = manual "Sync now" triggered by the logged-in user
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = await createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const body = await request.json().catch(() => ({}));
+  const username: string | undefined = body.username;
+  if (!username) return NextResponse.json({ error: "No Letterboxd username provided" }, { status: 400 });
+
   const admin = createAdminClient();
   const { data: settings } = await admin
     .from("user_settings")
-    .select("letterboxd_username, letterboxd_last_synced")
+    .select("letterboxd_last_synced")
     .eq("user_id", user.id)
     .single();
 
-  if (!settings?.letterboxd_username) {
-    return NextResponse.json({ error: "No Letterboxd username connected" }, { status: 400 });
-  }
-
-  const added = await syncUser(admin, user.id, settings.letterboxd_username, settings.letterboxd_last_synced ?? null);
+  const added = await syncUser(admin, user.id, username, settings?.letterboxd_last_synced ?? null);
   await admin.from("user_settings")
     .update({ letterboxd_last_synced: new Date().toISOString() })
     .eq("user_id", user.id);
