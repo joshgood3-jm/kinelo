@@ -5,10 +5,11 @@ import type { TMDBMovieDetail } from "@/types";
 
 const TMDB_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY!;
 const SEED_COUNT = 15;    // top N ranked movies used as seeds
-const TOP_CREATORS = 12;  // top N weighted creators to pull filmographies for
+const TOP_CREATORS = 20;  // top N weighted creators to pull filmographies for
 const MIN_VOTES = 1000;
 const MIN_RATING = 6.5;
-const MAX_PER_CREATOR = 2; // cap recs per director/writer/actor to avoid over-clustering
+const MAX_PER_CREATOR = 4; // cap recs per creator to avoid clustering while still building depth
+const CANDIDATE_POOL = 80; // candidates fetched for full details (user can dismiss many)
 
 const DIRECTOR_JOBS = new Set(["Director"]);
 const WRITER_JOBS = new Set(["Screenplay", "Story", "Writer", "Adaptation", "Screenplay/Story"]);
@@ -177,7 +178,7 @@ export async function GET() {
   // 6. Sort and fetch full TMDB details for top candidates
   const sortedCandidates = Array.from(candidateScores.entries())
     .sort((a, b) => b[1].score - a[1].score)
-    .slice(0, 40);
+    .slice(0, CANDIDATE_POOL);
 
   const details = await Promise.allSettled(
     sortedCandidates.map(([movieId]) =>
