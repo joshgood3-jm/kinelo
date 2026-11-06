@@ -9,36 +9,7 @@ import QuickRankModal, { type QuickRankMovie } from "@/components/QuickRankModal
 import StarRatingModal from "@/components/StarRatingModal";
 import type { TMDBMovieDetail, UserMovie } from "@/types";
 
-const TRAKT_KEY = process.env.NEXT_PUBLIC_TRAKT_API_KEY!;
-const TRAKT_HEADERS = {
-  "Content-Type": "application/json",
-  "Accept": "application/json",
-  "trakt-api-version": "2",
-  "trakt-api-key": TRAKT_KEY,
-};
-
-const GENRE_ID_MAP: Record<number, string> = {
-  28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy",
-  80: "Crime", 99: "Documentary", 18: "Drama", 10751: "Family",
-  14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music",
-  9648: "Mystery", 10749: "Romance", 878: "Science Fiction",
-  10770: "TV Movie", 53: "Thriller", 10752: "War", 37: "Western",
-};
-
 interface Rec { movie: TMDBMovieDetail; score: number; reasons: string[] }
-
-async function traktRelated(tmdbId: number): Promise<{ tmdbId: number }[]> {
-  const s = await fetch(`https://api.trakt.tv/search/tmdb/${tmdbId}?type=movie`, { headers: TRAKT_HEADERS });
-  if (!s.ok) return [];
-  const sd = await s.json();
-  const slug = sd?.[0]?.movie?.ids?.slug;
-  if (!slug) return [];
-  const r = await fetch(`https://api.trakt.tv/movies/${slug}/related?limit=12`, { headers: TRAKT_HEADERS });
-  if (!r.ok) return [];
-  const related = await r.json();
-  if (!Array.isArray(related)) return [];
-  return related.filter((m: { ids?: { tmdb?: number } }) => m.ids?.tmdb).map((m: { ids: { tmdb: number } }) => ({ tmdbId: m.ids.tmdb }));
-}
 
 const PAGE_SIZE = 8;
 
@@ -74,73 +45,14 @@ export default function RecommendationsPage() {
         for (const id of watchlistIds) alreadyAdded.add(id);
       }
 
-      // Get taste profile from server
+      // Server does all the heavy lifting — TMDB credits graph, scoring, ranking
       const res = await fetch("/api/recommendations");
-      const profile = await res.json();
+      const data = await res.json();
 
-      if (profile.fallback) {
-        poolRef.current = profile.fallback;
-        setQueue(profile.fallback.slice(0, PAGE_SIZE));
-        setLoading(false);
-        return;
-      }
-
-      const { topMovies, rankedIds, genreFreq, directorFreq } = profile;
-      const rankedSet = new Set<number>(rankedIds);
-
-      // Fetch Trakt related from browser (no Cloudflare block)
-      const traktResults = await Promise.all(
-        topMovies.map((tm: { tmdbId: number }) => traktRelated(tm.tmdbId).catch(() => []))
+      const recs: Rec[] = (data.recs ?? data.fallback ?? []).filter(
+        (r: Rec) => !alreadyAdded.has(r.movie.id)
       );
 
-      // Collect unique candidate TMDB IDs with source tracking
-      const candidateMap = new Map<number, { tmdbId: number; sources: string[] }>();
-      traktResults.forEach((related: { tmdbId: number }[], i: number) => {
-        const sourceTitle = topMovies[i].title;
-        for (const r of related) {
-          if (rankedSet.has(r.tmdbId) || alreadyAdded.has(r.tmdbId)) continue;
-          if (candidateMap.has(r.tmdbId)) {
-            candidateMap.get(r.tmdbId)!.sources.push(sourceTitle);
-          } else {
-            candidateMap.set(r.tmdbId, { tmdbId: r.tmdbId, sources: [sourceTitle] });
-          }
-        }
-      });
-
-      // Sort by overlap, fetch TMDB details for top candidates
-      const sorted = Array.from(candidateMap.values()).sort((a, b) => b.sources.length - a.sources.length);
-      const top = sorted.slice(0, 50);
-      const details = await Promise.allSettled(top.map((c) => fetch(`https://api.themoviedb.org/3/movie/${c.tmdbId}?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY}&language=en-US`).then((r) => r.json())));
-
-      const recs: Rec[] = [];
-      details.forEach((result, i) => {
-        if (result.status !== "fulfilled") return;
-        const movie = result.value as TMDBMovieDetail;
-        if (!movie.id || (movie as { success?: boolean }).success === false) return;
-        const candidate = top[i];
-        let score = candidate.sources.length * 3;
-        const reasons: string[] = [];
-
-        const raw = movie as { genre_ids?: number[]; genres?: { name: string }[] };
-        const movieGenres: string[] = raw.genres?.map((g) => g.name) ?? (raw.genre_ids ?? []).map((id) => GENRE_ID_MAP[id]).filter(Boolean);
-        movieGenres.forEach((g) => {
-          if (genreFreq[g]) { score += genreFreq[g]; if (!reasons.includes(`You love ${g}`)) reasons.push(`You love ${g}`); }
-        });
-
-        const director = (movie as { director?: string }).director;
-        if (director && directorFreq[director]) { score += directorFreq[director]; reasons.push(`More from ${director}`); }
-
-        if (candidate.sources.length > 1) {
-          reasons.unshift(`${candidate.sources.length} of your top picks recommend this`);
-        } else if (candidate.sources.length === 1) {
-          reasons.unshift(`Because you liked "${candidate.sources[0]}"`);
-        }
-
-        score += Math.min((movie.vote_average ?? 0) / 10, 1);
-        recs.push({ movie, score, reasons: reasons.slice(0, 2) });
-      });
-
-      recs.sort((a, b) => b.score - a.score);
       poolRef.current = recs;
       setHiddenIds(alreadyAdded);
       setQueue(recs.slice(0, PAGE_SIZE));
