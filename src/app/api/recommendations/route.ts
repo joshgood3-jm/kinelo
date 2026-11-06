@@ -6,8 +6,12 @@ import type { TMDBMovieDetail } from "@/types";
 const TMDB_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY!;
 const SEED_COUNT = 15;    // top N ranked movies used as seeds
 const TOP_CREATORS = 12;  // top N weighted creators to pull filmographies for
-const MIN_VOTES = 400;
+const MIN_VOTES = 1000;
 const MIN_RATING = 6.5;
+const MAX_PER_CREATOR = 2; // cap recs per director/writer/actor to avoid over-clustering
+
+const DIRECTOR_JOBS = new Set(["Director"]);
+const WRITER_JOBS = new Set(["Screenplay", "Story", "Writer", "Adaptation", "Screenplay/Story"]);
 
 const ROLE_WEIGHT = { director: 3.0, writer: 2.0, cast: 0.7 } as const;
 
@@ -26,6 +30,7 @@ interface FilmographyMovie {
   vote_average: number;
   vote_count: number;
   release_date: string;
+  job?: string; // present in crew results
 }
 
 async function tmdbGet<T>(path: string): Promise<T | null> {
@@ -132,21 +137,31 @@ export async function GET() {
   filmographies.forEach((result, i) => {
     if (result.status !== "fulfilled" || !result.value) return;
     const [, creator] = topCreators[i];
-    const films = creator.role === "cast"
-      ? result.value.cast
-      : result.value.crew;
 
+    // Only pull films where this person actually did the credited role
+    // (prevents EP credits from showing as "Directed by X")
+    let films: FilmographyMovie[];
+    if (creator.role === "cast") {
+      films = result.value.cast;
+    } else if (creator.role === "director") {
+      films = result.value.crew.filter((f) => DIRECTOR_JOBS.has(f.job ?? ""));
+    } else {
+      films = result.value.crew.filter((f) => WRITER_JOBS.has(f.job ?? ""));
+    }
+
+    const reason = creator.role === "director"
+      ? `Directed by ${creator.name}`
+      : creator.role === "writer"
+      ? `Written by ${creator.name}`
+      : `Starring ${creator.name}`;
+
+    let creatorContributions = 0;
     for (const film of films) {
       if (rankedIds.has(film.id)) continue;
       if ((film.vote_count ?? 0) < MIN_VOTES) continue;
       if ((film.vote_average ?? 0) < MIN_RATING) continue;
       if (!film.release_date) continue;
-
-      const reason = creator.role === "director"
-        ? `Directed by ${creator.name}`
-        : creator.role === "writer"
-        ? `Written by ${creator.name}`
-        : `Starring ${creator.name}`;
+      if (creatorContributions >= MAX_PER_CREATOR) break; // cap per creator
 
       const existing = candidateScores.get(film.id);
       if (existing) {
@@ -154,6 +169,7 @@ export async function GET() {
         if (!existing.reasons.includes(reason)) existing.reasons.push(reason);
       } else {
         candidateScores.set(film.id, { score: creator.weight, reasons: [reason] });
+        creatorContributions++;
       }
     }
   });
