@@ -5,11 +5,11 @@ import type { TMDBMovieDetail } from "@/types";
 
 const TMDB_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY!;
 const SEED_COUNT = 15;    // top N ranked movies used as seeds
-const TOP_CREATORS = 20;  // top N weighted creators to pull filmographies for
-const MIN_VOTES = 1000;
-const MIN_RATING = 6.5;
-const MAX_PER_CREATOR = 4; // cap recs per creator to avoid clustering while still building depth
-const CANDIDATE_POOL = 80; // candidates fetched for full details (user can dismiss many)
+const TOP_CREATORS = 25;  // top N weighted creators to pull filmographies for
+const MIN_VOTES = 500;
+const MIN_RATING = 6.2;
+const MAX_PER_CREATOR = 5; // cap recs per creator
+const CANDIDATE_POOL = 100; // candidates fetched for full details
 
 const DIRECTOR_JOBS = new Set(["Director"]);
 const WRITER_JOBS = new Set(["Screenplay", "Story", "Writer", "Adaptation", "Screenplay/Story"]);
@@ -149,6 +149,11 @@ export async function GET() {
     } else {
       films = result.value.crew.filter((f) => WRITER_JOBS.has(f.job ?? ""));
     }
+
+    // Sort best films first so the per-creator cap picks quality over arbitrary TMDB order
+    films = films
+      .slice()
+      .sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0) || (b.vote_count ?? 0) - (a.vote_count ?? 0));
 
     const reason = creator.role === "director"
       ? `Directed by ${creator.name}`
