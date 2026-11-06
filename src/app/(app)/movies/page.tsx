@@ -10,7 +10,7 @@ import StarRatingModal from "@/components/StarRatingModal";
 import LetterboxdImport from "@/components/LetterboxdImport";
 import QuickRankModal, { type QuickRankMovie } from "@/components/QuickRankModal";
 import Image from "next/image";
-import { Trash2, Plus, Check, Loader2, Bookmark } from "lucide-react";
+import { Trash2, Plus, Check, Loader2, Bookmark, RefreshCw } from "lucide-react";
 import type { TMDBMovie, UserMovie } from "@/types";
 
 interface WatchlistMovie {
@@ -69,6 +69,8 @@ export default function MoviesPage() {
   const [watchlist, setWatchlist] = useState<WatchlistMovie[]>([]);
   const [movingFromWatchlist, setMovingFromWatchlist] = useState<number | null>(null);
   const [letterboxdUsername, setLetterboxdUsername] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   const [curated, setCurated] = useState<{ imdb: CuratedMovie[]; rollingStone: CuratedMovie[]; oscars: CuratedMovie[] } | null>(null);
   const [curatedAddingId, setCuratedAddingId] = useState<number | null>(null);
@@ -194,6 +196,22 @@ export default function MoviesPage() {
     loadMovies();
   }
 
+  async function syncLetterboxd() {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/letterboxd-sync", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Sync failed");
+      setSyncResult(data.added > 0 ? `${data.added} new movie${data.added === 1 ? "" : "s"} added!` : "Already up to date");
+      if (data.added > 0) loadMovies();
+    } catch (e) {
+      setSyncResult(String(e));
+    }
+    setSyncing(false);
+    setTimeout(() => setSyncResult(null), 4000);
+  }
+
   async function selectOscarSubtab(sub: OscarSubtab) {
     setOscarSubtab(sub);
     if (sub === "picture" || oscarCache[sub] !== undefined) return;
@@ -228,13 +246,31 @@ export default function MoviesPage() {
             <h1 className="text-2xl font-bold mb-1">My Movies</h1>
             <p className="text-muted-foreground text-sm">{userMovies.length} movies ranked</p>
           </div>
-          <button
-            onClick={() => setShowImport(true)}
-            className={`flex items-center gap-1.5 text-xs border px-3 py-2 rounded-lg transition-colors font-medium mt-1 ${letterboxdUsername ? "bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400" : "bg-muted hover:bg-muted/80 border-border"}`}
-          >
-            <span className="text-base leading-none">🎞</span>
-            {letterboxdUsername ? `@${letterboxdUsername} ✓` : "Letterboxd"}
-          </button>
+          <div className="flex flex-col items-end gap-1.5">
+            <div className="flex items-center gap-2">
+              {letterboxdUsername && (
+                <button
+                  onClick={syncLetterboxd}
+                  disabled={syncing}
+                  className="flex items-center gap-1 text-xs border px-2.5 py-2 rounded-lg transition-colors font-medium bg-muted hover:bg-muted/80 border-border disabled:opacity-50"
+                  title="Sync Letterboxd now"
+                >
+                  <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+                  {syncing ? "Syncing…" : "Sync"}
+                </button>
+              )}
+              <button
+                onClick={() => setShowImport(true)}
+                className={`flex items-center gap-1.5 text-xs border px-3 py-2 rounded-lg transition-colors font-medium ${letterboxdUsername ? "bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400" : "bg-muted hover:bg-muted/80 border-border"}`}
+              >
+                <span className="text-base leading-none">🎞</span>
+                {letterboxdUsername ? `@${letterboxdUsername} ✓` : "Letterboxd"}
+              </button>
+            </div>
+            {syncResult && (
+              <p className="text-xs text-muted-foreground">{syncResult}</p>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}

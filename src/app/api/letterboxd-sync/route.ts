@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient as createServerClient } from "@/lib/supabase/server";
 import { parseDiaryRss } from "@/lib/letterboxd";
 import { getMovieDetail, tmdbMovieToMovie } from "@/lib/tmdb";
 import { starsToListElo, percentileElo } from "@/lib/elo";
@@ -76,6 +77,31 @@ async function syncUser(
     }
   }
   return added;
+}
+
+// POST = manual "Sync now" triggered by the logged-in user
+export async function POST() {
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const admin = createAdminClient();
+  const { data: settings } = await admin
+    .from("user_settings")
+    .select("letterboxd_username, letterboxd_last_synced")
+    .eq("user_id", user.id)
+    .single();
+
+  if (!settings?.letterboxd_username) {
+    return NextResponse.json({ error: "No Letterboxd username connected" }, { status: 400 });
+  }
+
+  const added = await syncUser(admin, user.id, settings.letterboxd_username, settings.letterboxd_last_synced ?? null);
+  await admin.from("user_settings")
+    .update({ letterboxd_last_synced: new Date().toISOString() })
+    .eq("user_id", user.id);
+
+  return NextResponse.json({ added });
 }
 
 // GET = Vercel cron (requires Authorization: Bearer <CRON_SECRET>)
