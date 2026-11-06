@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getMovieDetail, tmdbMovieToMovie, posterUrl } from "@/lib/tmdb";
 import { starsToListElo, neighborhoodPool } from "@/lib/elo";
@@ -71,6 +71,7 @@ export default function MoviesPage() {
   const [letterboxdUsername, setLetterboxdUsername] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const syncQueueRef = useRef<QuickRankMovie[]>([]);
 
   const [curated, setCurated] = useState<{ imdb: CuratedMovie[]; rollingStone: CuratedMovie[]; oscars: CuratedMovie[] } | null>(null);
   const [curatedAddingId, setCuratedAddingId] = useState<number | null>(null);
@@ -187,13 +188,27 @@ export default function MoviesPage() {
 
   function handleQuickRankDone() {
     setQuickRank(null);
-    loadMovies();
-    setTab("mine");
+    // Pop next synced movie from queue if any
+    const next = syncQueueRef.current.shift();
+    if (next) {
+      startSyncedRank(next, userMovies);
+    } else {
+      loadMovies();
+      setTab("mine");
+    }
   }
 
   function handleQuickRankClose() {
+    syncQueueRef.current = [];
     setQuickRank(null);
     loadMovies();
+  }
+
+  function startSyncedRank(newMovie: QuickRankMovie, currentPool: UserMovie[]) {
+    const allPool = currentPool.map(toQuickRankMovie);
+    const champion = allPool.length > 0 ? allPool.reduce((a, b) => a.eloScore > b.eloScore ? a : b) : null;
+    const poolWithoutChampion = champion ? allPool.filter((m) => m.umId !== champion.umId) : allPool;
+    setQuickRank({ newMovie, pool: neighborhoodPool(poolWithoutChampion, newMovie.eloScore), fullPool: allPool });
   }
 
   async function syncLetterboxd() {
@@ -204,7 +219,16 @@ export default function MoviesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Sync failed");
       setSyncResult(data.added > 0 ? `${data.added} new movie${data.added === 1 ? "" : "s"} added!` : "Already up to date");
-      if (data.added > 0) loadMovies();
+      if (data.added > 0 && data.movies?.length > 0) {
+        // Fetch fresh pool from DB so QuickRank has accurate ELO scores
+        const { data: { user } } = await supabase.auth.getUser();
+        const { data: freshData } = user ? await supabase.from("user_movies").select("*, movies(*)").eq("user_id", user.id).order("elo_score", { ascending: false }) : { data: null };
+        const freshPool = (freshData as unknown as UserMovie[]) ?? [];
+        setUserMovies(freshPool);
+        const [first, ...rest] = data.movies as QuickRankMovie[];
+        syncQueueRef.current = rest;
+        startSyncedRank(first, freshPool);
+      }
     } catch (e) {
       setSyncResult(String(e));
     }

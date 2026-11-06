@@ -16,17 +16,25 @@ async function tmdbSearchByTitle(title: string, year: number | null): Promise<nu
   return data.results?.[0]?.id ?? null;
 }
 
+interface SyncedMovie {
+  umId: string;
+  movieId: number;
+  title: string;
+  posterPath: string | null;
+  eloScore: number;
+}
+
 async function syncUser(
   admin: ReturnType<typeof createAdminClient>,
   userId: string,
   username: string,
   lastSynced: string | null
-): Promise<number> {
+): Promise<SyncedMovie[]> {
   const res = await fetch(`https://letterboxd.com/${encodeURIComponent(username)}/rss/`, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; Kinelo/1.0)" },
     signal: AbortSignal.timeout(10000),
   });
-  if (!res.ok) return 0;
+  if (!res.ok) return [];
   const xml = await res.text();
   const films = parseDiaryRss(xml);
 
@@ -38,12 +46,10 @@ async function syncUser(
   const existingIds = new Set((existing ?? []).map((r: { movie_id: number }) => r.movie_id));
   const currentElos: number[] = (existing ?? []).map((r: { elo_score: number }) => r.elo_score);
 
-  // On first sync (no cutoff) import all; on subsequent syncs the RSS only contains recent entries anyway
   const toAdd = films.filter((f) => !f.isRewatch && !existingIds.has(f.tmdbId ?? -1));
-  // If we have a cutoff and nothing new in the feed, bail early
-  if (cutoff && toAdd.length === 0) return 0;
+  if (cutoff && toAdd.length === 0) return [];
 
-  let added = 0;
+  const synced: SyncedMovie[] = [];
   for (const film of toAdd) {
     try {
       const tmdbId = film.tmdbId ?? await tmdbSearchByTitle(film.title, film.year);
@@ -61,22 +67,22 @@ async function syncUser(
         ? starsToListElo(film.rating, currentElos)
         : percentileElo(0.5, currentElos);
 
-      const { error } = await admin.from("user_movies").insert({
+      const { data: inserted, error } = await admin.from("user_movies").insert({
         user_id: userId,
         movie_id: tmdbId,
         elo_score: seedElo,
-      });
+      }).select("id").single();
 
-      if (!error) {
+      if (!error && inserted) {
         existingIds.add(tmdbId);
         currentElos.push(seedElo);
-        added++;
+        synced.push({ umId: inserted.id, movieId: tmdbId, title: movie.title, posterPath: movie.poster_path, eloScore: seedElo });
       }
     } catch {
       // skip on TMDB error
     }
   }
-  return added;
+  return synced;
 }
 
 // POST = manual "Sync now" triggered by the logged-in user
@@ -96,12 +102,12 @@ export async function POST(request: Request) {
     .eq("user_id", user.id)
     .single();
 
-  const added = await syncUser(admin, user.id, username, settings?.letterboxd_last_synced ?? null);
+  const synced = await syncUser(admin, user.id, username, settings?.letterboxd_last_synced ?? null);
   await admin.from("user_settings")
     .update({ letterboxd_last_synced: new Date().toISOString() })
     .eq("user_id", user.id);
 
-  return NextResponse.json({ added });
+  return NextResponse.json({ added: synced.length, movies: synced });
 }
 
 // GET = Vercel cron (requires Authorization: Bearer <CRON_SECRET>)
@@ -121,8 +127,8 @@ export async function GET(request: Request) {
 
   let total = 0;
   for (const s of settings) {
-    const added = await syncUser(admin, s.user_id, s.letterboxd_username, s.letterboxd_last_synced);
-    total += added;
+    const synced = await syncUser(admin, s.user_id, s.letterboxd_username, s.letterboxd_last_synced);
+    total += synced.length;
     await admin.from("user_settings")
       .update({ letterboxd_last_synced: new Date().toISOString() })
       .eq("user_id", s.user_id);
