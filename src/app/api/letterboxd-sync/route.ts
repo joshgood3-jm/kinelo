@@ -74,10 +74,11 @@ async function syncUser(
       const detail = await getMovieDetail(tmdbId);
       const movie = tmdbMovieToMovie(detail);
 
-      await moviesDb.from("movies").upsert({
+      const { error: moviesError } = await moviesDb.from("movies").upsert({
         id: movie.id, title: movie.title, poster_path: movie.poster_path,
         year: movie.year, genres: movie.genres, overview: movie.overview, director: movie.director,
       });
+      if (moviesError) { debug.skipped.push({ title: film.title, reason: `movies_error:${moviesError.code}` }); continue; }
 
       const seedElo = film.rating !== null
         ? starsToListElo(film.rating, currentElos)
@@ -122,7 +123,8 @@ export async function POST(request: Request) {
     .eq("user_id", user.id)
     .single();
 
-  const { synced, debug } = await syncUser(admin, supabase, user.id, username, settings?.letterboxd_last_synced ?? null);
+  // Use user auth client for both movies upsert and user_movies (no service role key needed)
+  const { synced, debug } = await syncUser(supabase, supabase, user.id, username, settings?.letterboxd_last_synced ?? null);
   await supabase
     .from("user_settings")
     .update({ letterboxd_last_synced: new Date().toISOString() })
